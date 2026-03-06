@@ -1,21 +1,18 @@
 import Cocoa
-import QuartzCore
+import SwiftUI
 
 /// A floating pill-shaped overlay at the bottom of the screen
-/// that shows recording/processing state — like Wispr Flow's indicator.
+/// with audio-reactive waveform bars and a processing spinner.
 class OverlayPanel: NSPanel {
-    private var visualEffect: NSVisualEffectView!
-    private var indicatorDot: NSView!
-    private var label: NSTextField!
+    private let overlayState = OverlayState()
     
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
     
     init() {
-        let width: CGFloat = 180
-        let height: CGFloat = 38
+        let width: CGFloat = 120
+        let height: CGFloat = 40
         
-        // Center horizontally, 80px from bottom
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let x = screenFrame.midX - width / 2
         let y = screenFrame.minY + 80
@@ -27,7 +24,6 @@ class OverlayPanel: NSPanel {
             defer: false
         )
         
-        // Floating, transparent, always-on-top, doesn't steal focus
         level = .floating
         isOpaque = false
         backgroundColor = .clear
@@ -36,54 +32,15 @@ class OverlayPanel: NSPanel {
         isMovableByWindowBackground = false
         hidesOnDeactivate = false
         
-        setupUI(width: width, height: height)
+        let hostingView = NSHostingView(rootView: OverlayView(state: overlayState))
+        hostingView.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        contentView = hostingView
     }
-    
-    private func setupUI(width: CGFloat, height: CGFloat) {
-        guard let contentView = contentView else { return }
-        contentView.wantsLayer = true
-        
-        // Translucent dark pill background
-        visualEffect = NSVisualEffectView(frame: contentView.bounds)
-        visualEffect.autoresizingMask = [.width, .height]
-        visualEffect.material = .hudWindow
-        visualEffect.blendingMode = .behindWindow
-        visualEffect.state = .active
-        visualEffect.wantsLayer = true
-        visualEffect.layer?.cornerRadius = height / 2
-        visualEffect.layer?.masksToBounds = true
-        contentView.addSubview(visualEffect)
-        
-        // Red indicator dot
-        let dotSize: CGFloat = 10
-        indicatorDot = NSView(frame: NSRect(
-            x: 20,
-            y: (height - dotSize) / 2,
-            width: dotSize,
-            height: dotSize
-        ))
-        indicatorDot.wantsLayer = true
-        indicatorDot.layer?.backgroundColor = NSColor.systemRed.cgColor
-        indicatorDot.layer?.cornerRadius = dotSize / 2
-        visualEffect.addSubview(indicatorDot)
-        
-        // Label
-        label = NSTextField(labelWithString: "")
-        label.font = .systemFont(ofSize: 13, weight: .medium)
-        label.textColor = .white
-        label.frame = NSRect(x: 38, y: (height - 20) / 2, width: width - 52, height: 20)
-        label.alignment = .left
-        visualEffect.addSubview(label)
-    }
-    
-    // MARK: - States
     
     func showRecording() {
-        label.stringValue = "Recording…"
-        indicatorDot.layer?.backgroundColor = NSColor.systemRed.cgColor
-        startPulse()
+        overlayState.mode = .recording
+        overlayState.audioLevel = 0
         
-        // Fade in
         alphaValue = 0
         orderFront(nil)
         NSAnimationContext.runAnimationGroup { context in
@@ -92,40 +49,119 @@ class OverlayPanel: NSPanel {
         }
     }
     
+    func updateLevel(_ level: Float) {
+        overlayState.audioLevel = level
+    }
+    
     func showProcessing() {
-        stopPulse()
-        label.stringValue = "Transcribing…"
-        indicatorDot.layer?.backgroundColor = NSColor.systemYellow.cgColor
-        indicatorDot.layer?.opacity = 1.0
+        overlayState.mode = .processing
+        overlayState.audioLevel = 0
     }
     
     func dismiss() {
-        stopPulse()
-        
-        // Fade out
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.2
             self.animator().alphaValue = 0
         }, completionHandler: {
             self.orderOut(nil)
+            self.overlayState.mode = .idle
         })
     }
+}
+
+// MARK: - State
+
+enum OverlayMode {
+    case idle, recording, processing
+}
+
+class OverlayState: ObservableObject {
+    @Published var mode: OverlayMode = .idle
+    @Published var audioLevel: Float = 0
+}
+
+// MARK: - SwiftUI Views
+
+struct OverlayView: View {
+    @ObservedObject var state: OverlayState
     
-    // MARK: - Pulse Animation
+    var body: some View {
+        HStack(spacing: 6) {
+            switch state.mode {
+            case .idle:
+                EmptyView()
+            case .recording:
+                WaveformBars(level: CGFloat(state.audioLevel))
+            case .processing:
+                WaveformBars(level: 0.05) // static low bars
+                ProgressView()
+                    .scaleEffect(0.5)
+                    .frame(width: 14, height: 14)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(height: 40)
+        .background(
+            VisualEffectBackground()
+                .clipShape(Capsule())
+        )
+        .shadow(color: .black.opacity(0.2), radius: 8, y: 2)
+    }
+}
+
+struct WaveformBars: View {
+    var level: CGFloat
+    let barCount = 5
     
-    private func startPulse() {
-        let pulse = CABasicAnimation(keyPath: "opacity")
-        pulse.fromValue = 1.0
-        pulse.toValue = 0.25
-        pulse.duration = 0.6
-        pulse.autoreverses = true
-        pulse.repeatCount = .infinity
-        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        indicatorDot.layer?.add(pulse, forKey: "pulse")
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<barCount, id: \.self) { index in
+                WaveformBar(level: level, index: index, total: barCount)
+            }
+        }
+    }
+}
+
+struct WaveformBar: View {
+    var level: CGFloat
+    var index: Int
+    var total: Int
+    
+    // Each bar gets a slightly different height based on its position
+    // Center bars are taller, edge bars shorter (like a real waveform)
+    private var barHeight: CGFloat {
+        let center = CGFloat(total - 1) / 2.0
+        let distFromCenter = abs(CGFloat(index) - center) / center
+        let positionScale = 1.0 - (distFromCenter * 0.4)
+        
+        let minHeight: CGFloat = 4
+        let maxHeight: CGFloat = 20
+        let targetHeight = minHeight + (maxHeight - minHeight) * level * positionScale
+        
+        // Add slight random variation per bar
+        let seed = sin(Double(index) * 1.8 + Double(level) * 5.0)
+        let variation = CGFloat(seed) * 2.0
+        
+        return max(minHeight, min(maxHeight, targetHeight + variation))
     }
     
-    private func stopPulse() {
-        indicatorDot.layer?.removeAnimation(forKey: "pulse")
-        indicatorDot.layer?.opacity = 1.0
+    var body: some View {
+        RoundedRectangle(cornerRadius: 2)
+            .fill(Color.white.opacity(0.9))
+            .frame(width: 4, height: barHeight)
+            .animation(.easeOut(duration: 0.08), value: level)
     }
+}
+
+struct VisualEffectBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+    
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }

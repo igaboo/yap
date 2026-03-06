@@ -229,6 +229,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsDelegate {
         overlayPanel.showRecording()
         NSSound(named: "Blow")?.play()
         
+        // Wire up audio level updates to the overlay
+        audioRecorder.onLevelUpdate = { [weak self] level in
+            self?.overlayPanel.updateLevel(level)
+        }
+        
         do {
             try audioRecorder.start()
         } catch {

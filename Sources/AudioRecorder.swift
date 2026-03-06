@@ -6,6 +6,9 @@ class AudioRecorder {
     let tempURL = FileManager.default.temporaryDirectory
         .appendingPathComponent("voicetype_recording.wav")
     
+    /// Called on main thread with current audio level (0.0 - 1.0)
+    var onLevelUpdate: ((Float) -> Void)?
+    
     /// Start recording microphone audio to a temporary WAV file.
     func start() throws {
         let engine = AVAudioEngine()
@@ -26,8 +29,23 @@ class AudioRecorder {
         
         audioFile = try AVAudioFile(forWriting: tempURL, settings: settings)
         
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             try? self?.audioFile?.write(from: buffer)
+            
+            // Calculate RMS level from buffer
+            guard let channelData = buffer.floatChannelData?[0] else { return }
+            let frames = Int(buffer.frameLength)
+            var sum: Float = 0
+            for i in 0..<frames {
+                sum += channelData[i] * channelData[i]
+            }
+            let rms = sqrtf(sum / Float(max(frames, 1)))
+            // Normalize to 0-1 range (typical mic RMS is 0-0.5)
+            let level = min(rms * 3.0, 1.0)
+            
+            DispatchQueue.main.async {
+                self?.onLevelUpdate?(level)
+            }
         }
         
         engine.prepare()
@@ -39,10 +57,8 @@ class AudioRecorder {
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine = nil
-        audioFile = nil // flush & close
-        
-        guard FileManager.default.fileExists(atPath: tempURL.path) else { return nil }
-        return tempURL
+        audioFile = nil
+        return FileManager.default.fileExists(atPath: tempURL.path) ? tempURL : nil
     }
     
     /// Cancel recording without returning data.
