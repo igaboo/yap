@@ -20,22 +20,22 @@ struct SettingsView: View {
     init(config: [String: Any]) {
         let formatting = config["formatting"] as? [String: Any] ?? [:]
         _hotkey = State(initialValue: config["hotkey"] as? String ?? "fn")
-        _style = State(initialValue: formatting["style"] as? String ?? "verbatim")
-        _provider = State(initialValue: formatting["provider"] as? String ?? "gemini")
+        _style = State(initialValue: formatting["style"] as? String ?? "formatted")
+        _provider = State(initialValue: formatting["provider"] as? String ?? "none")
         _apiKey = State(initialValue: formatting["api_key"] as? String ?? "")
         _model = State(initialValue: formatting["model"] as? String ?? "")
     }
     
     private var selectedStyle: FormattingStyle {
-        FormattingStyle.allCases.first { $0.rawValue == style } ?? .verbatim
+        FormattingStyle.allCases.first { $0.rawValue == style } ?? .formatted
     }
     
     private var selectedProvider: APIProvider {
-        APIProvider.allCases.first { $0.rawValue == provider } ?? .gemini
+        APIProvider.allCases.first { $0.rawValue == provider } ?? .none
     }
     
-    private var hasAPIKey: Bool {
-        !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private var hasProvider: Bool {
+        selectedProvider != .none
     }
     
     var body: some View {
@@ -50,46 +50,7 @@ struct SettingsView: View {
                     .pickerStyle(.menu)
                 }
                 
-                // Formatting
-                Section {
-                    Picker("Mode", selection: $style) {
-                        ForEach(FormattingStyle.allCases, id: \.rawValue) { mode in
-                            Text(mode.label).tag(mode.rawValue)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    
-                    // Example preview right under the picker
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("**\(selectedStyle.label)** — \(selectedStyle.description)")
-                            .font(.caption)
-                            .foregroundColor(.primary)
-                        
-                        Divider()
-                        
-                        Text("Input:")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Text("\"\(FormattingStyle.exampleInput)\"")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .italic()
-                        
-                        Text("Output:")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .padding(.top, 2)
-                        Text("\"\(selectedStyle.exampleOutput)\"")
-                            .font(.caption)
-                            .foregroundColor(.primary)
-                    }
-                    .padding(.vertical, 4)
-                    .animation(.easeInOut(duration: 0.15), value: style)
-                } header: {
-                    Text("Formatting")
-                }
-                
-                // AI Provider
+                // AI Provider (above formatting)
                 Section {
                     Picker("Provider", selection: $provider) {
                         ForEach(APIProvider.allCases, id: \.rawValue) { p in
@@ -98,34 +59,75 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.menu)
                     
-                    TextField("API Key", text: $apiKey)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    TextField("Model (blank = \(selectedProvider.defaultModel))", text: $model)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.body)
+                    if hasProvider {
+                        TextField("API Key", text: $apiKey)
+                            .textFieldStyle(.roundedBorder)
+                        
+                        TextField("Model (blank = \(selectedProvider.defaultModel))", text: $model)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.body)
+                    }
                 } header: {
                     Text("AI Provider")
                 } footer: {
-                    if hasAPIKey {
-                        if selectedProvider.handlesTranscription {
-                            Text("✅ \(selectedProvider.label) will handle transcription and formatting.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text("✅ Apple Speech transcribes → \(selectedProvider.label) formats the text.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    } else {
-                        Text("No API key — using Apple's built-in dictation (on-device, no formatting).")
+                    if !hasProvider {
+                        Text("Using Apple's built-in dictation — free, on-device, no formatting.")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                    } else if selectedProvider.handlesTranscription {
+                        Text("\(selectedProvider.label) handles both transcription and formatting.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("Apple Speech transcribes → \(selectedProvider.label) formats the text.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                // Formatting (only shown when a provider is selected)
+                if hasProvider {
+                    Section {
+                        Picker("Mode", selection: $style) {
+                            ForEach(FormattingStyle.allCases, id: \.rawValue) { mode in
+                                Text(mode.label).tag(mode.rawValue)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("**\(selectedStyle.label)** — \(selectedStyle.description)")
+                                .font(.caption)
+                                .foregroundColor(.primary)
+                            
+                            Divider()
+                            
+                            Text("Input:")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text("\"\(FormattingStyle.exampleInput)\"")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .italic()
+                            
+                            Text("Output:")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .padding(.top, 2)
+                            Text("\"\(selectedStyle.exampleOutput)\"")
+                                .font(.caption)
+                                .foregroundColor(.primary)
+                        }
+                        .padding(.vertical, 4)
+                        .animation(.easeInOut(duration: 0.15), value: style)
+                    } header: {
+                        Text("Formatting")
                     }
                 }
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
+            .animation(.easeInOut(duration: 0.2), value: provider)
             
             // Buttons
             HStack {
@@ -144,7 +146,8 @@ struct SettingsView: View {
             .padding(.bottom, 16)
             .padding(.top, 4)
         }
-        .frame(width: 480, height: 520)
+        .frame(width: 480, height: hasProvider ? 560 : 280)
+        .animation(.easeInOut(duration: 0.2), value: provider)
     }
 }
 
@@ -155,7 +158,7 @@ class SettingsWindow: NSWindow {
     
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 560),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -195,7 +198,6 @@ class SettingsWindow: NSWindow {
         contentView = NSHostingView(rootView: settingsView)
     }
     
-    // Reload UI when window is shown again (picks up external config changes)
     override func makeKeyAndOrderFront(_ sender: Any?) {
         loadUI()
         super.makeKeyAndOrderFront(sender)

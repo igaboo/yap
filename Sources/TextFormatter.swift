@@ -1,14 +1,12 @@
 import Foundation
 
 enum FormattingStyle: String, CaseIterable {
-    case verbatim = "verbatim"
     case casual = "casual"
     case formatted = "formatted"
     case professional = "professional"
     
     var label: String {
         switch self {
-        case .verbatim: return "Verbatim"
         case .casual: return "Casual"
         case .formatted: return "Formatted"
         case .professional: return "Professional"
@@ -17,7 +15,6 @@ enum FormattingStyle: String, CaseIterable {
     
     var description: String {
         switch self {
-        case .verbatim: return "Raw dictation, no changes at all"
         case .casual: return "Light cleanup, keeps your voice"
         case .formatted: return "Clean formatting, faithful to what you said"
         case .professional: return "Polished writing, elevated language"
@@ -29,8 +26,6 @@ enum FormattingStyle: String, CaseIterable {
     
     var exampleOutput: String {
         switch self {
-        case .verbatim:
-            return "um so like i was thinking we should probably you know move the meeting to friday because uh thursdays not gonna work for me"
         case .casual:
             return "so like i was thinking we should probably move the meeting to friday because thursdays not gonna work for me"
         case .formatted:
@@ -42,8 +37,6 @@ enum FormattingStyle: String, CaseIterable {
     
     var prompt: String {
         switch self {
-        case .verbatim:
-            return "" // unused
         case .casual:
             return """
             You clean up spoken text. You MUST respond with ONLY a JSON object: {"text":"cleaned version here"} \
@@ -79,13 +72,6 @@ enum FormattingStyle: String, CaseIterable {
             "Only transcribe human speech. If there is no speech, respond with {\"text\":\"\"}."
         
         switch self {
-        case .verbatim:
-            return """
-            Transcribe this audio exactly as spoken. Include all filler words (um, uh, like, you know). \
-            All lowercase. No punctuation unless clearly intended. \
-            \(noiseRule) \
-            You MUST respond with ONLY a JSON object: {"text":"transcription here"}
-            """
         case .casual:
             return """
             Transcribe this audio. Remove filler sounds (um, uh, er) but keep everything else exactly as spoken — \
@@ -117,12 +103,14 @@ enum FormattingStyle: String, CaseIterable {
 }
 
 enum APIProvider: String, CaseIterable {
+    case none = "none"
     case gemini = "gemini"
     case openai = "openai"
     case anthropic = "anthropic"
     
     var label: String {
         switch self {
+        case .none: return "None (Apple Dictation)"
         case .gemini: return "Google Gemini"
         case .openai: return "OpenAI"
         case .anthropic: return "Anthropic"
@@ -131,6 +119,7 @@ enum APIProvider: String, CaseIterable {
     
     var defaultModel: String {
         switch self {
+        case .none: return ""
         case .gemini: return "gemini-2.5-flash"
         case .openai: return "gpt-4o-mini"
         case .anthropic: return "claude-haiku-4-5-20251001"
@@ -139,6 +128,7 @@ enum APIProvider: String, CaseIterable {
     
     var defaultEndpoint: String {
         switch self {
+        case .none: return ""
         case .gemini: return "https://generativelanguage.googleapis.com/v1beta"
         case .openai: return "https://api.openai.com/v1/chat/completions"
         case .anthropic: return "https://api.anthropic.com/v1/messages"
@@ -187,7 +177,7 @@ class TextFormatter {
     /// Format already-transcribed text (OpenAI / Anthropic)
     func format(_ text: String, completion: @escaping (Result<String, Error>) -> Void) {
         log("format() called — provider=\(provider.rawValue) style=\(style.rawValue)")
-        guard provider != .gemini, style != .verbatim, !apiKey.isEmpty else {
+        guard provider != .none, provider != .gemini, !apiKey.isEmpty else {
             completion(.success(text))
             return
         }
