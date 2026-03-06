@@ -81,12 +81,8 @@ struct SettingsView: View {
                     
                     if hasTxProvider {
                         TextField("API Key", text: $txApiKey, prompt: Text("Required"))
-                            .textFieldStyle(.roundedBorder)
-                            .frame(height: 22)
                         
                         TextField("Model", text: $txModel, prompt: Text(selectedTxProvider.defaultModel))
-                            .textFieldStyle(.roundedBorder)
-                            .frame(height: 22)
                     }
                 } header: {
                     Text("Transcription")
@@ -108,8 +104,6 @@ struct SettingsView: View {
                     
                     if hasFmtProvider {
                         TextField("API Key", text: fmtUseSameKey ? $txApiKey : $fmtApiKey, prompt: Text("Required"))
-                            .textFieldStyle(.roundedBorder)
-                            .frame(height: 22)
                             .disabled(fmtUseSameKey)
                         
                         if hasTxProvider {
@@ -117,8 +111,6 @@ struct SettingsView: View {
                         }
                         
                         TextField("Model", text: $fmtModel, prompt: Text(selectedFmtProvider.defaultModel))
-                            .textFieldStyle(.roundedBorder)
-                            .frame(height: 22)
                         
                         Picker("Style", selection: $fmtStyle) {
                             ForEach(FormattingStyle.allCases, id: \.rawValue) { s in
