@@ -34,7 +34,11 @@ class OverlayPanel: NSPanel {
         
         let hostingView = NSHostingView(rootView: OverlayView(state: overlayState))
         hostingView.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = .clear
         contentView = hostingView
+        contentView?.wantsLayer = true
+        contentView?.layer?.backgroundColor = .clear
     }
     
     func showRecording() {
@@ -103,7 +107,9 @@ struct OverlayView: View {
         .padding(.vertical, 8)
         .frame(height: 40)
         .background(.ultraThinMaterial, in: Capsule())
+        .compositingGroup()
         .shadow(color: .black.opacity(0.3), radius: 10, y: 3)
+        .background(Color.clear)
     }
 }
 
