@@ -107,7 +107,7 @@ struct OverlayView: View {
                             .fill(.ultraThinMaterial)
                             .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
                     )
-                    .animation(.easeInOut(duration: 0.3), value: state.mode)
+
             }
         }
     }
@@ -118,11 +118,9 @@ struct OverlayView: View {
         case .recording:
             WaveformBars(level: CGFloat(state.audioLevel))
                 .frame(width: 40, height: 24)
-                .transition(.opacity.animation(.easeInOut(duration: 0.3)))
         case .processing:
             WaveLoadingAnimation()
                 .frame(width: 40, height: 24)
-                .transition(.opacity.animation(.easeInOut(duration: 0.3)))
         case .error(let message):
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -140,20 +138,22 @@ struct OverlayView: View {
 }
 
 struct WaveLoadingAnimation: View {
-    let barCount = 5
+    let barCount = 7
     
     var body: some View {
         TimelineView(.animation) { timeline in
-            let phase = timeline.date.timeIntervalSinceReferenceDate * .pi * 2
+            // Pulse position sweeps 0 → barCount-1, repeating every 0.8s
+            let t = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.8) / 0.8
+            let pulseCenter = t * Double(barCount - 1)
             
             HStack(spacing: 3) {
                 ForEach(0..<barCount, id: \.self) { index in
-                    let waveOffset = Double(index) / Double(barCount) * .pi * 2
-                    let wave = sin(phase - waveOffset)
-                    let normalized = (wave + 1) / 2
+                    let distance = abs(Double(index) - pulseCenter)
+                    // Narrow gaussian pulse — only ~1-2 bars raised at a time
+                    let pulse = exp(-distance * distance / 0.6)
                     let minH: CGFloat = 4
                     let maxH: CGFloat = 22
-                    let barHeight = minH + (maxH - minH) * CGFloat(normalized)
+                    let barHeight = minH + (maxH - minH) * CGFloat(pulse)
                     
                     RoundedRectangle(cornerRadius: 2)
                         .fill(Color.white.opacity(0.9))
