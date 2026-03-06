@@ -157,14 +157,16 @@ struct AudioReactiveBars: View {
             ForEach(0..<barCount, id: \.self) { index in
                 let center = CGFloat(barCount - 1) / 2.0
                 let distFromCenter = abs(CGFloat(index) - center) / center
-                let positionScale = 1.0 - (distFromCenter * 0.35)
+                // Strong center emphasis: center bars get full height, edges get much less
+                let positionScale = 1.0 - (distFromCenter * distFromCenter * 0.8)
                 
-                let boosted = pow(level, 0.4)
+                // Aggressive boost so even moderate volume shows dramatic movement
+                let boosted = pow(level, 0.3)
                 let targetHeight = 6.0 + 18.0 * boosted * positionScale
-                // More variation per bar — each bar feels independent
-                let seed1 = sin(Double(index) * 2.5 + Double(level) * 10.0)
-                let seed2 = cos(Double(index) * 1.8 + Double(level) * 6.0)
-                let variation = CGFloat(seed1 * 3.0 + seed2 * 2.0) * boosted
+                // Per-bar jitter so they don't all move in lockstep
+                let seed1 = sin(Double(index) * 2.5 + Double(level) * 12.0)
+                let seed2 = cos(Double(index) * 1.8 + Double(level) * 7.0)
+                let variation = CGFloat(seed1 * 2.5 + seed2 * 1.5) * boosted
                 let barHeight = max(6.0, min(24.0, targetHeight + variation))
                 
                 RoundedRectangle(cornerRadius: 2)
