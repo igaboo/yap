@@ -84,7 +84,7 @@ class AudioRecorder {
         let fftSize = 1024
         let log2n = vDSP_Length(log2(Float(fftSize)))
         guard let fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2)) else {
-            return Array(repeating: 0, count: bandCount)
+            return Array(repeating: 0, count: rawBandCount)
         }
         defer { vDSP_destroy_fftsetup(fftSetup) }
         
