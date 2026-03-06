@@ -80,11 +80,19 @@ struct SettingsView: View {
                     .pickerStyle(.menu)
                     
                     if hasTxProvider {
-                        TextField("API Key", text: $txApiKey)
-                            .textFieldStyle(.roundedBorder)
+                        LabeledContent("API Key") {
+                            TextField("", text: $txApiKey)
+                                .textFieldStyle(.roundedBorder)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
                         
-                        TextField(selectedTxProvider.defaultModel, text: $txModel)
-                            .textFieldStyle(.roundedBorder)
+                        LabeledContent("Model") {
+                            TextField(selectedTxProvider.defaultModel, text: $txModel)
+                                .textFieldStyle(.roundedBorder)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
                     }
                 } header: {
                     Text("Transcription")
@@ -106,15 +114,25 @@ struct SettingsView: View {
                     
                     if hasFmtProvider {
                         if fmtSharesKey {
-                            Text("Using API key from transcription.")
-                                .font(.caption).foregroundColor(.secondary)
+                            LabeledContent("API Key") {
+                                Text("Using key from transcription")
+                                    .font(.caption).foregroundColor(.secondary)
+                            }
                         } else {
-                            TextField("API Key", text: $fmtApiKey)
-                                .textFieldStyle(.roundedBorder)
+                            LabeledContent("API Key") {
+                                TextField("", text: $fmtApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
                         }
                         
-                        TextField(selectedFmtProvider.defaultModel, text: $fmtModel)
-                            .textFieldStyle(.roundedBorder)
+                        LabeledContent("Model") {
+                            TextField(selectedFmtProvider.defaultModel, text: $fmtModel)
+                                .textFieldStyle(.roundedBorder)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
                         
                         Picker("Style", selection: $fmtStyle) {
                             ForEach(FormattingStyle.allCases, id: \.rawValue) { s in
