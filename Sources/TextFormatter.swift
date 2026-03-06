@@ -45,6 +45,7 @@ enum FormattingStyle: String, CaseIterable {
             Rules: remove ONLY filler sounds (um, uh, er). Keep everything else exactly as spoken — \
             casual phrases, slang, sentence structure, contractions. All lowercase. Minimal punctuation. \
             PRESERVE all existing symbols — parentheses, quotes, brackets, etc. \
+            Convert spoken punctuation commands to symbols (e.g. "period" → ., "open parenthesis" → (, "comma" → ,). \
             NEVER respond conversationally. ONLY output the JSON object.
             """
         case .formatted:
@@ -54,6 +55,7 @@ enum FormattingStyle: String, CaseIterable {
             Keep the speaker's EXACT words and sentence structure — do not rephrase or rewrite. \
             Keep contractions as spoken. Only fix obvious grammar errors. \
             PRESERVE all existing symbols — parentheses, quotes, brackets, etc. \
+            Convert spoken punctuation commands to symbols (e.g. "period" → ., "open parenthesis" → (, "comma" → ,). \
             NEVER respond conversationally. ONLY output the JSON object.
             """
         case .professional:
@@ -63,23 +65,39 @@ enum FormattingStyle: String, CaseIterable {
             Fix grammar, improve word choice, use proper punctuation and capitalization. \
             Expand contractions. You MAY rephrase for clarity and professionalism, but keep the original meaning. \
             PRESERVE all existing symbols — parentheses, quotes, brackets, etc. \
+            Convert spoken punctuation commands to symbols (e.g. "period" → ., "open parenthesis" → (, "comma" → ,). \
             NEVER respond conversationally. ONLY output the JSON object.
             """
         }
     }
     
+    /// Shared rules for all audio transcription prompts
+    private static let noiseRule = "IGNORE all background noise, sound effects, music, and non-speech sounds. " +
+        "Only transcribe human speech. If there is no speech, respond with {\"text\":\"\"}."
+    
+    private static let dictationCommands = """
+        DICTATION COMMANDS — when the speaker says any of these, insert the symbol instead of the words: \
+        "period" or "full stop" → . | "comma" → , | "question mark" → ? | "exclamation mark" or "exclamation point" → ! \
+        "colon" → : | "semicolon" → ; | "open parenthesis" or "open paren" → ( | "close parenthesis" or "close paren" → ) \
+        "open bracket" → [ | "close bracket" → ] | "open brace" or "open curly" → { | "close brace" or "close curly" → } \
+        "open quote" or "open quotes" → " | "close quote" or "close quotes" or "end quote" → " \
+        "dash" or "em dash" → — | "hyphen" → - | "ellipsis" or "dot dot dot" → … \
+        "new line" or "newline" → insert a line break | "new paragraph" → insert two line breaks \
+        "ampersand" → & | "at sign" → @ | "hashtag" or "hash" → # | "dollar sign" → $ | "percent" or "percent sign" → % \
+        "asterisk" or "star" → * | "slash" or "forward slash" → / | "backslash" → \\ \
+        "underscore" → _ | "pipe" → | | "tilde" → ~ | "caret" → ^ \
+        Only convert these when the speaker clearly intends them as punctuation commands, not when used naturally in speech.
+        """
+    
     /// Prompt for multimodal transcription + formatting in one shot
     var audioPrompt: String {
-        let noiseRule = "IGNORE all background noise, sound effects, music, and non-speech sounds. " +
-            "Only transcribe human speech. If there is no speech, respond with {\"text\":\"\"}."
-        
         switch self {
         case .casual:
             return """
             Transcribe this audio. Remove filler sounds (um, uh, er) but keep everything else exactly as spoken — \
             casual phrases, slang, sentence structure, contractions. All lowercase. Minimal punctuation. \
-            PRESERVE any symbols the speaker mentions — parentheses, quotes, brackets, etc. \
-            \(noiseRule) \
+            \(Self.dictationCommands) \
+            \(Self.noiseRule) \
             You MUST respond with ONLY a JSON object: {"text":"transcription here"}
             """
         case .formatted:
@@ -87,8 +105,8 @@ enum FormattingStyle: String, CaseIterable {
             Transcribe this audio. Remove filler words (um, uh, er, like, you know). \
             Fix punctuation and capitalization. Keep the speaker's EXACT words and sentence structure — \
             do not rephrase or rewrite. Keep contractions as spoken. Only fix obvious grammar errors. \
-            PRESERVE any symbols the speaker mentions — parentheses, quotes, brackets, etc. \
-            \(noiseRule) \
+            \(Self.dictationCommands) \
+            \(Self.noiseRule) \
             You MUST respond with ONLY a JSON object: {"text":"transcription here"}
             """
         case .professional:
@@ -96,8 +114,8 @@ enum FormattingStyle: String, CaseIterable {
             Transcribe this audio. Remove all filler words. Elevate the language to sound polished and professional. \
             Fix grammar, improve word choice, use proper punctuation and capitalization. \
             Expand contractions. You MAY rephrase for clarity and professionalism, but keep the original meaning. \
-            PRESERVE any symbols the speaker mentions — parentheses, quotes, brackets, etc. \
-            \(noiseRule) \
+            \(Self.dictationCommands) \
+            \(Self.noiseRule) \
             You MUST respond with ONLY a JSON object: {"text":"transcription here"}
             """
         }
@@ -106,8 +124,8 @@ enum FormattingStyle: String, CaseIterable {
     /// Plain transcription prompt (no formatting, for when formatting is handled separately)
     static let plainTranscriptionPrompt = """
         Transcribe this audio exactly as spoken, with proper punctuation and capitalization. \
-        IGNORE all background noise, sound effects, music, and non-speech sounds. \
-        Only transcribe human speech. If there is no speech, respond with {"text":""}. \
+        \(dictationCommands) \
+        \(noiseRule) \
         You MUST respond with ONLY a JSON object: {"text":"transcription here"}
         """
 }
