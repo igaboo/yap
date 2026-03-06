@@ -74,8 +74,12 @@ struct SettingsView: View {
                         Text("Using Apple's built-in dictation — free, on-device, no formatting.")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                    } else if selectedProvider.handlesTranscription && selectedProvider.canFormat {
+                        Text("\(selectedProvider.label) handles transcription and formatting in one call.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     } else if selectedProvider.handlesTranscription {
-                        Text("\(selectedProvider.label) handles both transcription and formatting.")
+                        Text("\(selectedProvider.label) handles transcription only — no text formatting.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     } else {
@@ -85,8 +89,8 @@ struct SettingsView: View {
                     }
                 }
                 
-                // Formatting (only shown when a provider is selected)
-                if hasProvider {
+                // Formatting (only shown when provider supports it)
+                if hasProvider && selectedProvider.canFormat {
                     Section {
                         Picker("Mode", selection: $style) {
                             ForEach(FormattingStyle.allCases, id: \.rawValue) { mode in
@@ -146,7 +150,7 @@ struct SettingsView: View {
             .padding(.bottom, 16)
             .padding(.top, 4)
         }
-        .frame(width: 480, height: hasProvider ? 560 : 280)
+        .frame(width: 480, height: !hasProvider ? 280 : (selectedProvider.canFormat ? 560 : 340))
         .animation(.easeInOut(duration: 0.2), value: provider)
     }
 }

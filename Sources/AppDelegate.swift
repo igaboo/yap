@@ -284,32 +284,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsDelegate {
             return
         }
         
-        // If provider handles transcription (Gemini), skip Apple Speech entirely
+        // If provider handles transcription, skip Apple Speech entirely
         if let formatter = textFormatter, formatter.handlesTranscription {
-            log("Using \(formatter) for transcription + formatting")
-            formatter.transcribeAndFormat(audioURL: audioURL) { [weak self] result in
+            log("Using \(formatter.provider.rawValue) for transcription")
+            formatter.processAudio(audioURL: audioURL) { [weak self] result in
                 DispatchQueue.main.async {
                     switch result {
                     case .success(let text):
-                        log("Transcribe+format result: \"\(text)\"")
+                        log("Result: \"\(text)\"")
                         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
                         if !trimmed.isEmpty {
                             self?.pasteManager.paste(trimmed)
                         }
                     case .failure(let error):
-                        log("❌ Transcribe+format failed: \(error)")
-                        self?.showNotification(title: "VoiceType", body: "Transcription failed: \(error.localizedDescription)")
+                        log("❌ Transcription failed: \(error)")
+                        self?.showNotification(title: "VoiceType", body: "Failed: \(error.localizedDescription)")
                     }
                     self?.finishProcessing()
                 }
             }
         } else {
-            // Apple Speech → optional AI formatting (existing flow)
+            // Apple Speech → optional AI formatting
             transcriber.transcribe(audioURL: audioURL) { [weak self] result in
                 DispatchQueue.main.async {
                     switch result {
                     case .success(let text):
-                        log("Transcription result: \"\(text)\"")
+                        log("Transcription: \"\(text)\"")
                         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             self?.finishProcessing()
                             return
@@ -322,7 +322,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsDelegate {
                                         log("Formatted: \"\(formatted)\"")
                                         self?.pasteManager.paste(formatted)
                                     case .failure(let error):
-                                        log("Formatting failed, using raw: \(error)")
+                                        log("Format failed, using raw: \(error)")
                                         self?.pasteManager.paste(text)
                                     }
                                     self?.finishProcessing()
@@ -334,7 +334,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsDelegate {
                         }
                     case .failure(let error):
                         log("❌ Transcription failed: \(error)")
-                        self?.showNotification(title: "VoiceType", body: "Transcription failed: \(error.localizedDescription)")
+                        self?.showNotification(title: "VoiceType", body: "Failed: \(error.localizedDescription)")
                         self?.finishProcessing()
                     }
                 }
