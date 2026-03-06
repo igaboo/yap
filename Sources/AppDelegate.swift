@@ -114,13 +114,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsDelegate {
         if let url = bundle.url(forResource: "MenuIconTemplate@2x", withExtension: "png"),
            let img = NSImage(contentsOf: url) {
             img.isTemplate = true
-            img.size = NSSize(width: 18, height: 18) // point size, @2x handles retina
+            img.size = NSSize(width: 14, height: 14) // point size, @2x handles retina
             return img
         }
         if let url = bundle.url(forResource: "MenuIconTemplate", withExtension: "png"),
            let img = NSImage(contentsOf: url) {
             img.isTemplate = true
-            img.size = NSSize(width: 18, height: 18)
+            img.size = NSSize(width: 14, height: 14)
             return img
         }
         return nil
