@@ -13,12 +13,12 @@
 
 ## Install
 
-**Download:** Grab the latest `Yap.app.zip` from [Releases](https://github.com/igaboo/yap/releases), unzip, and move to `/Applications`.
+**Download:** Grab the latest `Yap.app.zip` from [Releases](https://github.com/oobagi/yap/releases), unzip, and move to `/Applications`.
 
 **Build from source:**
 
 ```bash
-git clone https://github.com/igaboo/yap.git
+git clone https://github.com/oobagi/yap.git
 cd yap
 ./build.sh
 cp -r build/Yap.app /Applications/
