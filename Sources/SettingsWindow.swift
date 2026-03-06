@@ -103,8 +103,9 @@ struct SettingsView: View {
                     .pickerStyle(.menu)
                     
                     if hasFmtProvider {
-                        TextField("API Key", text: fmtUseSameKey ? $txApiKey : $fmtApiKey, prompt: Text("Required"))
-                            .disabled(fmtUseSameKey)
+                        let shareKey = fmtUseSameKey && hasTxProvider
+                        TextField("API Key", text: shareKey ? $txApiKey : $fmtApiKey, prompt: Text("Required"))
+                            .disabled(shareKey)
                         
                         if hasTxProvider {
                             Toggle("Use same API key", isOn: $fmtUseSameKey)
