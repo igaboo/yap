@@ -153,7 +153,8 @@ struct AudioReactiveBars: View {
     let barCount: Int
     
     // Per-bar scale offsets to break symmetry — each bar has a unique personality
-    private let barScales: [CGFloat] = [0.2, 0.35, 0.5, 0.68, 0.85, 1.0, 0.9, 0.72, 0.55, 0.38, 0.22]
+    // Exponential rise from edges to center — dramatic arch
+    private let barScales: [CGFloat] = [0.08, 0.15, 0.3, 0.52, 0.8, 1.0, 0.85, 0.58, 0.33, 0.17, 0.1]
     
     var body: some View {
         HStack(spacing: 2) {
@@ -208,10 +209,10 @@ struct WaveAnimationBars: View {
                     let boosted = pow(lastLevel * displayLevel, 0.5)
                     let audioH = max(6.0, min(28.0, 6.0 + 22.0 * boosted * positionScale))
                     
-                    // Wave overlay
+                    // Wave overlay — wider gaussian for a smooth rolling wave
                     let distance = abs(Double(index) - waveCenter)
-                    let wave = exp(-distance * distance / 1.5)
-                    let waveH = 22.0 * CGFloat(wave) * waveStrength
+                    let wave = exp(-distance * distance / 3.5)
+                    let waveH = 18.0 * CGFloat(wave) * waveStrength
                     
                     let barHeight = min(28.0, max(6.0, audioH + waveH))
                     
