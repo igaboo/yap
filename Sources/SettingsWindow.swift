@@ -180,7 +180,7 @@ struct SettingsView: View {
             .padding(.bottom, 16)
             .padding(.top, 4)
         }
-        .frame(width: 480, minHeight: 300, maxHeight: 700)
+        .frame(width: 480, height: 600)
     }
 }
 
