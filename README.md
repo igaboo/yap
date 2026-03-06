@@ -6,7 +6,7 @@
 
 <p align="center">
   Hold a key, speak, release — your words are transcribed and pasted wherever you're typing.<br>
-  Like <a href="https://wisprflow.com">Wispr Flow</a>, but free and open source.
+  Free and open source voice-to-text for macOS.
 </p>
 
 ---
