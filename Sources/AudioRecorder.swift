@@ -151,9 +151,9 @@ class AudioRecorder {
         
         // Compute overall RMS to use as a volume gate
         var rmsSum: Float = 0
-        let count = min(frameCount, fftSize)
-        for i in 0..<count { rmsSum += channelData[i] * channelData[i] }
-        let rms = sqrtf(rmsSum / Float(max(count, 1)))
+        let rmsCount = min(frameCount, fftSize)
+        for i in 0..<rmsCount { rmsSum += channelData[i] * channelData[i] }
+        let rms = sqrtf(rmsSum / Float(max(rmsCount, 1)))
         // Aggressive scaling — normal speech should hit 0.6-0.9
         let volume = min(pow(rms * 18.0, 0.6), 1.0)
         
