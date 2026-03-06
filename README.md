@@ -1,94 +1,46 @@
 # VoiceType 🎙️
 
-A lightweight macOS menu bar app — hold a key, speak, release, and your words are transcribed and pasted into whatever you're typing in. Like Wispr Flow, but yours.
+Hold a key, speak, release — your words are transcribed and pasted wherever you're typing. Like Wispr Flow, but free and open source.
 
-**Free. No API keys. Uses Apple's built-in speech recognition.**
+## Features
 
-## How It Works
+- **Hold-to-record** — fn or Option key
+- **On-device transcription** — Apple Speech, no API key needed
+- **AI formatting** — optional, bring your own key (OpenAI or Anthropic)
+- **Four modes** — Verbatim, Casual, Formatted, Professional
+- **Floating overlay** — pill indicator shows recording/processing state
+- **Zero dependencies** — pure Swift, ~1300 lines
 
-1. **Hold fn key** → starts recording
-2. **Release fn key** → transcribes via Apple Speech Recognition
-3. **Transcribed text** → auto-pasted into the focused input field
-4. Menu bar icon shows state: 🎤 idle · 🎤● recording · ⋯ processing
+## Install
 
-## Requirements
-
-- macOS 12+ (Monterey or later)
-- Xcode Command Line Tools (`xcode-select --install`)
-
-## Setup
-
-### 1. Install Command Line Tools (if needed)
 ```bash
-xcode-select --install
-```
-
-### 2. Build & install
-```bash
+git clone https://github.com/igaboo/voicetype.git
 cd voicetype
-chmod +x build.sh
-./build.sh
+chmod +x build.sh && ./build.sh
 cp -r build/VoiceType.app /Applications/
-```
-
-### 3. Launch
-```bash
 open /Applications/VoiceType.app
 ```
 
-macOS will prompt for three permissions — grant all:
-- **Microphone** — to record your voice
-- **Speech Recognition** — to transcribe audio
-- **Accessibility** — to detect the hotkey and simulate paste
+Requires Xcode Command Line Tools (`xcode-select --install`) and macOS 12+.
 
-## Configuration (optional)
+First launch will prompt for **Microphone**, **Speech Recognition**, and **Accessibility** permissions — grant all three.
 
-Create `~/.config/voicetype/config.json` to change the hotkey:
+## Settings
 
-```json
-{
-    "hotkey": "fn"
-}
+Click the mic icon in the menu bar → **Settings** (⌘,) to configure:
+
+- **Hotkey** — fn or Option
+- **Formatting mode** — Verbatim, Casual, Formatted, or Professional
+- **AI provider** — None, OpenAI, or Anthropic (API key required for formatting)
+
+## Update
+
+```bash
+cd voicetype && git pull
+./build.sh && cp -r build/VoiceType.app /Applications/
+pkill -f VoiceType; open /Applications/VoiceType.app
 ```
 
-**Hotkey options:**
-- `"fn"` — fn / Globe key 🌐 (default)
-- `"option"` — Option (⌥) key
+## License
 
-### fn key on Apple Silicon Macs
-
-On newer MacBooks the fn key doubles as the Globe (🌐) key. If the emoji picker keeps appearing:
-
-1. **System Settings → Keyboard → "Press 🌐 key to"** → set to **"Do Nothing"**
-2. Or switch to `"option"` in config
-
-## Menu Bar
-
-Click the mic icon in the menu bar:
-- **Enabled** — toggle on/off (⌘E)
-- **Quit** — exit the app (⌘Q)
-
-## How It's Built
-
-Pure Swift, zero external dependencies:
-- `Speech` framework — Apple's on-device speech recognition
-- `AVAudioEngine` — microphone recording
-- `CGEventTap` — global hotkey detection
-- `CGEvent` — simulated Cmd+V paste
-- `NSStatusItem` — menu bar icon
-
-## Troubleshooting
-
-**"Failed to create event tap"** → Grant Accessibility permission, then restart the app.
-
-**No transcription** → Check Speech Recognition permission in System Settings. Look at Console.app for `VoiceType` log messages.
-
-**fn key opens emoji picker** → Change system setting (see above) or use `"option"` hotkey.
-
-**Paste doesn't work in some apps** → The app must accept Cmd+V. Some terminal emulators may use Cmd+Shift+V instead.
-
-## Launch at Login (optional)
-
-To start VoiceType automatically:
-1. Open **System Settings → General → Login Items**
-2. Click **+** and select **VoiceType** from Applications
+MIT
