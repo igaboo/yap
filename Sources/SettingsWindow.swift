@@ -1,19 +1,145 @@
 import Cocoa
+import SwiftUI
 
 protocol SettingsDelegate: AnyObject {
     func settingsDidChange()
 }
 
+// MARK: - SwiftUI Settings View
+
+struct SettingsView: View {
+    @State private var hotkey: String
+    @State private var style: String
+    @State private var provider: String
+    @State private var apiKey: String
+    @State private var model: String
+    
+    var onSave: ((String, String, String, String, String) -> Void)?
+    var onCancel: (() -> Void)?
+    
+    init(config: [String: Any]) {
+        let formatting = config["formatting"] as? [String: Any] ?? [:]
+        _hotkey = State(initialValue: config["hotkey"] as? String ?? "fn")
+        _style = State(initialValue: formatting["style"] as? String ?? "verbatim")
+        _provider = State(initialValue: formatting["provider"] as? String ?? "none")
+        _apiKey = State(initialValue: formatting["api_key"] as? String ?? "")
+        _model = State(initialValue: formatting["model"] as? String ?? "")
+    }
+    
+    private var selectedStyle: FormattingStyle {
+        FormattingStyle.allCases.first { $0.rawValue == style } ?? .verbatim
+    }
+    
+    private var selectedProvider: APIProvider {
+        APIProvider.allCases.first { $0.rawValue == provider } ?? .none
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                // General
+                Section {
+                    Picker("Hotkey", selection: $hotkey) {
+                        Text("fn / Globe 🌐").tag("fn")
+                        Text("Option ⌥").tag("option")
+                    }
+                    .pickerStyle(.menu)
+                }
+                
+                // Formatting
+                Section {
+                    Picker("Mode", selection: $style) {
+                        ForEach(FormattingStyle.allCases, id: \.rawValue) { mode in
+                            Text(mode.label).tag(mode.rawValue)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    
+                    // Example preview right under the picker
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("**\(selectedStyle.label)** — \(selectedStyle.description)")
+                            .font(.caption)
+                            .foregroundColor(.primary)
+                        
+                        Divider()
+                        
+                        Text("Input:")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("\"\(FormattingStyle.exampleInput)\"")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .italic()
+                        
+                        Text("Output:")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .padding(.top, 2)
+                        Text("\"\(selectedStyle.exampleOutput)\"")
+                            .font(.caption)
+                            .foregroundColor(.primary)
+                    }
+                    .padding(.vertical, 4)
+                    .animation(.easeInOut(duration: 0.15), value: style)
+                } header: {
+                    Text("Formatting")
+                }
+                
+                // AI Provider
+                Section {
+                    Picker("Provider", selection: $provider) {
+                        ForEach(APIProvider.allCases, id: \.rawValue) { p in
+                            Text(p.label).tag(p.rawValue)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    
+                    if selectedProvider != .none {
+                        TextField("API Key", text: $apiKey)
+                            .textFieldStyle(.roundedBorder)
+                        
+                        TextField("Model (blank = default: \(selectedProvider.defaultModel))", text: $model)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.body)
+                    }
+                } header: {
+                    Text("AI Provider")
+                } footer: {
+                    if selectedProvider == .none && selectedStyle != .verbatim {
+                        Text("⚠️ Select a provider and enter an API key to enable AI formatting.")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            
+            // Buttons
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    onCancel?()
+                }
+                .keyboardShortcut(.cancelAction)
+                
+                Button("Save") {
+                    onSave?(hotkey, style, provider, apiKey, model)
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
+            .padding(.top, 4)
+        }
+        .frame(width: 480, height: 520)
+    }
+}
+
+// MARK: - NSWindow wrapper
+
 class SettingsWindow: NSWindow {
     weak var settingsDelegate: SettingsDelegate?
-    
-    private var stylePopup: NSPopUpButton!
-    private var providerPopup: NSPopUpButton!
-    private var apiKeyField: NSTextField!
-    private var modelField: NSTextField!
-    private var hotkeyPopup: NSPopUpButton!
-    private var exampleBox: NSBox!
-    private var exampleLabel: NSTextField!
     
     init() {
         super.init(
@@ -27,205 +153,40 @@ class SettingsWindow: NSWindow {
         isReleasedWhenClosed = false
         center()
         
-        setupUI()
-        loadSettings()
+        loadUI()
     }
     
-    private func setupUI() {
-        guard let contentView = contentView else { return }
-        
-        let padding: CGFloat = 20
-        let labelWidth: CGFloat = 110
-        let fieldX: CGFloat = padding + labelWidth + 8
-        let fieldWidth: CGFloat = 480 - fieldX - padding
-        var y: CGFloat = 470
-        let rowHeight: CGFloat = 36
-        
-        // Hotkey
-        addLabel("Hotkey:", x: padding, y: y, width: labelWidth, to: contentView)
-        hotkeyPopup = NSPopUpButton(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 26))
-        hotkeyPopup.addItems(withTitles: ["fn / Globe 🌐", "Option ⌥"])
-        contentView.addSubview(hotkeyPopup)
-        y -= rowHeight
-        
-        // Style
-        addLabel("Formatting:", x: padding, y: y, width: labelWidth, to: contentView)
-        stylePopup = NSPopUpButton(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 26))
-        for style in FormattingStyle.allCases {
-            stylePopup.addItem(withTitle: style.label)
-        }
-        stylePopup.target = self
-        stylePopup.action = #selector(styleChanged(_:))
-        contentView.addSubview(stylePopup)
-        y -= rowHeight
-        
-        // Provider
-        addLabel("AI Provider:", x: padding, y: y, width: labelWidth, to: contentView)
-        providerPopup = NSPopUpButton(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 26))
-        for provider in APIProvider.allCases {
-            providerPopup.addItem(withTitle: provider.label)
-        }
-        providerPopup.target = self
-        providerPopup.action = #selector(providerChanged(_:))
-        contentView.addSubview(providerPopup)
-        y -= rowHeight
-        
-        // API Key
-        addLabel("API Key:", x: padding, y: y, width: labelWidth, to: contentView)
-        apiKeyField = NSTextField(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 24))
-        apiKeyField.placeholderString = "sk-..."
-        contentView.addSubview(apiKeyField)
-        y -= rowHeight
-        
-        // Model
-        addLabel("Model:", x: padding, y: y, width: labelWidth, to: contentView)
-        modelField = NSTextField(frame: NSRect(x: fieldX, y: y, width: fieldWidth, height: 24))
-        modelField.placeholderString = "Leave blank for default"
-        contentView.addSubview(modelField)
-        y -= rowHeight + 10
-        
-        // Example box
-        exampleBox = NSBox(frame: NSRect(x: padding, y: 60, width: 480 - padding * 2, height: y - 60))
-        exampleBox.title = "Example"
-        exampleBox.titlePosition = .atTop
-        exampleBox.contentViewMargins = NSSize(width: 10, height: 8)
-        contentView.addSubview(exampleBox)
-        
-        exampleLabel = NSTextField(wrappingLabelWithString: "")
-        exampleLabel.font = .systemFont(ofSize: 11.5)
-        exampleLabel.textColor = .secondaryLabelColor
-        exampleLabel.isSelectable = true
-        exampleLabel.frame = NSRect(x: 0, y: 0, width: exampleBox.frame.width - 30, height: exampleBox.frame.height - 30)
-        exampleBox.contentView?.addSubview(exampleLabel)
-        
-        updateExample()
-        
-        // Buttons
-        let buttonY: CGFloat = 18
-        
-        let saveButton = NSButton(frame: NSRect(x: 480 - padding - 80, y: buttonY, width: 80, height: 30))
-        saveButton.title = "Save"
-        saveButton.bezelStyle = .rounded
-        saveButton.keyEquivalent = "\r"
-        saveButton.target = self
-        saveButton.action = #selector(save(_:))
-        contentView.addSubview(saveButton)
-        
-        let cancelButton = NSButton(frame: NSRect(x: 480 - padding - 170, y: buttonY, width: 80, height: 30))
-        cancelButton.title = "Cancel"
-        cancelButton.bezelStyle = .rounded
-        cancelButton.keyEquivalent = "\u{1b}"
-        cancelButton.target = self
-        cancelButton.action = #selector(cancel(_:))
-        contentView.addSubview(cancelButton)
-    }
-    
-    private func addLabel(_ text: String, x: CGFloat, y: CGFloat, width: CGFloat, to view: NSView) {
-        let label = NSTextField(labelWithString: text)
-        label.frame = NSRect(x: x, y: y + 2, width: width, height: 20)
-        label.alignment = .right
-        label.font = .systemFont(ofSize: 13)
-        view.addSubview(label)
-    }
-    
-    private func updateExample() {
-        let selectedIndex = stylePopup?.indexOfSelectedItem ?? 0
-        let style = FormattingStyle.allCases[selectedIndex]
-        
-        var lines = "Someone says:\n"
-        lines += "\"\(FormattingStyle.exampleInput)\"\n\n"
-        
-        for mode in FormattingStyle.allCases {
-            let marker = mode == style ? "→" : "  "
-            let bold = mode == style
-            lines += "\(marker) \(mode.label): \(mode.description)\n"
-            lines += "    \"\(mode.exampleOutput)\"\n\n"
-        }
-        
-        let attributed = NSMutableAttributedString(string: lines)
-        let fullRange = NSRange(location: 0, length: attributed.length)
-        attributed.addAttribute(.font, value: NSFont.systemFont(ofSize: 11), range: fullRange)
-        attributed.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: fullRange)
-        
-        // Bold the selected mode's line
-        let selectedHeader = "\(style.label): \(style.description)"
-        if let range = lines.range(of: selectedHeader) {
-            let nsRange = NSRange(range, in: lines)
-            attributed.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 11), range: nsRange)
-            attributed.addAttribute(.foregroundColor, value: NSColor.labelColor, range: nsRange)
-        }
-        
-        // Bold the arrow
-        if let range = lines.range(of: "→") {
-            let nsRange = NSRange(range, in: lines)
-            attributed.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: nsRange)
-            attributed.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 11), range: nsRange)
-        }
-        
-        exampleLabel.attributedStringValue = attributed
-    }
-    
-    @objc private func styleChanged(_ sender: NSPopUpButton) {
-        updateExample()
-    }
-    
-    // MARK: - Load / Save
-    
-    private func loadSettings() {
+    private func loadUI() {
         let config = Self.loadConfig()
         
-        // Hotkey
-        let hotkey = config["hotkey"] as? String ?? "fn"
-        hotkeyPopup.selectItem(at: hotkey == "option" ? 1 : 0)
+        var settingsView = SettingsView(config: config)
         
-        // Formatting settings
-        let formatting = config["formatting"] as? [String: Any] ?? [:]
-        
-        let styleName = formatting["style"] as? String ?? "verbatim"
-        if let style = FormattingStyle.allCases.firstIndex(where: { $0.rawValue == styleName }) {
-            stylePopup.selectItem(at: style)
+        settingsView.onSave = { [weak self] hotkey, style, provider, apiKey, model in
+            let config: [String: Any] = [
+                "hotkey": hotkey,
+                "formatting": [
+                    "style": style,
+                    "provider": provider,
+                    "api_key": apiKey,
+                    "model": model
+                ] as [String: Any]
+            ]
+            Self.saveConfig(config)
+            self?.settingsDelegate?.settingsDidChange()
+            self?.close()
         }
         
-        let providerName = formatting["provider"] as? String ?? "none"
-        if let provider = APIProvider.allCases.firstIndex(where: { $0.rawValue == providerName }) {
-            providerPopup.selectItem(at: provider)
+        settingsView.onCancel = { [weak self] in
+            self?.close()
         }
         
-        apiKeyField.stringValue = formatting["api_key"] as? String ?? ""
-        modelField.stringValue = formatting["model"] as? String ?? ""
-        
-        updateExample()
+        contentView = NSHostingView(rootView: settingsView)
     }
     
-    @objc private func save(_ sender: Any) {
-        let hotkey = hotkeyPopup.indexOfSelectedItem == 1 ? "option" : "fn"
-        let style = FormattingStyle.allCases[stylePopup.indexOfSelectedItem]
-        let provider = APIProvider.allCases[providerPopup.indexOfSelectedItem]
-        
-        let config: [String: Any] = [
-            "hotkey": hotkey,
-            "formatting": [
-                "style": style.rawValue,
-                "provider": provider.rawValue,
-                "api_key": apiKeyField.stringValue,
-                "model": modelField.stringValue
-            ] as [String: Any]
-        ]
-        
-        Self.saveConfig(config)
-        settingsDelegate?.settingsDidChange()
-        close()
-    }
-    
-    @objc private func cancel(_ sender: Any) {
-        close()
-    }
-    
-    @objc private func providerChanged(_ sender: NSPopUpButton) {
-        let provider = APIProvider.allCases[sender.indexOfSelectedItem]
-        if modelField.stringValue.isEmpty || APIProvider.allCases.contains(where: { $0.defaultModel == modelField.stringValue }) {
-            modelField.placeholderString = provider.defaultModel.isEmpty ? "Leave blank for default" : provider.defaultModel
-        }
+    // Reload UI when window is shown again (picks up external config changes)
+    override func makeKeyAndOrderFront(_ sender: Any?) {
+        loadUI()
+        super.makeKeyAndOrderFront(sender)
     }
     
     // MARK: - Config File
