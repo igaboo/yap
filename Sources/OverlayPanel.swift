@@ -138,43 +138,26 @@ struct OverlayView: View {
 
 struct WaveLoadingAnimation: View {
     let barCount = 5
-    @State private var phase: Double = 0
     
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<barCount, id: \.self) { index in
-                WaveLoadingBar(phase: phase, index: index, total: barCount)
+        TimelineView(.animation) { timeline in
+            let phase = timeline.date.timeIntervalSinceReferenceDate * .pi * 2
+            
+            HStack(spacing: 3) {
+                ForEach(0..<barCount, id: \.self) { index in
+                    let waveOffset = Double(index) / Double(barCount) * .pi * 2
+                    let wave = sin(phase + waveOffset)
+                    let normalized = (wave + 1) / 2
+                    let minH: CGFloat = 4
+                    let maxH: CGFloat = 22
+                    let barHeight = minH + (maxH - minH) * CGFloat(normalized)
+                    
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.white.opacity(0.9))
+                        .frame(width: 4, height: barHeight)
+                }
             }
         }
-        .onAppear {
-            withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: false)) {
-                phase = .pi * 2
-            }
-        }
-    }
-}
-
-struct WaveLoadingBar: View {
-    var phase: Double
-    var index: Int
-    var total: Int
-    
-    private var barHeight: CGFloat {
-        let minHeight: CGFloat = 4
-        let maxHeight: CGFloat = 22
-        
-        // Each bar is offset in phase to create the travelling wave
-        let waveOffset = Double(index) / Double(total) * .pi * 2
-        let wave = sin(phase + waveOffset)
-        let normalized = (wave + 1) / 2  // 0...1
-        
-        return minHeight + (maxHeight - minHeight) * CGFloat(normalized)
-    }
-    
-    var body: some View {
-        RoundedRectangle(cornerRadius: 2)
-            .fill(Color.white.opacity(0.9))
-            .frame(width: 4, height: barHeight)
     }
 }
 
