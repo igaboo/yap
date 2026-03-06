@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var fmtApiKey: String
     @State private var fmtModel: String
     @State private var fmtStyle: String
+    @State private var fmtUseSameKey: Bool
     
     var onSave: (([String: Any]) -> Void)?
     var onCancel: (() -> Void)?
@@ -36,6 +37,10 @@ struct SettingsView: View {
         _fmtApiKey = State(initialValue: fmt["api_key"] as? String ?? "")
         _fmtModel = State(initialValue: fmt["model"] as? String ?? "")
         _fmtStyle = State(initialValue: fmt["style"] as? String ?? "formatted")
+        
+        let txKey = tx["api_key"] as? String ?? ""
+        let fKey = fmt["api_key"] as? String ?? ""
+        _fmtUseSameKey = State(initialValue: fKey.isEmpty || fKey == txKey)
     }
     
     private var selectedTxProvider: TranscriptionProvider {
@@ -52,11 +57,6 @@ struct SettingsView: View {
     
     private var hasTxProvider: Bool { selectedTxProvider != .none }
     private var hasFmtProvider: Bool { selectedFmtProvider != .none }
-    
-    /// Whether formatting provider uses the same key as transcription (same provider name)
-    private var fmtSharesKey: Bool {
-        hasFmtProvider && fmtProvider == txProvider && !txApiKey.isEmpty
-    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -80,7 +80,7 @@ struct SettingsView: View {
                     .pickerStyle(.menu)
                     
                     if hasTxProvider {
-                        SecureField("API Key", text: $txApiKey, prompt: Text("Required"))
+                        TextField("API Key", text: $txApiKey, prompt: Text("Required"))
                             .textFieldStyle(.roundedBorder)
                             .fixedSize(horizontal: false, vertical: true)
                         
@@ -107,13 +107,13 @@ struct SettingsView: View {
                     .pickerStyle(.menu)
                     
                     if hasFmtProvider {
-                        if fmtSharesKey {
-                            Text("Using API key from transcription.")
-                                .font(.caption).foregroundColor(.secondary)
-                        } else {
-                            SecureField("API Key", text: $fmtApiKey, prompt: Text("Required"))
-                                .textFieldStyle(.roundedBorder)
-                                .fixedSize(horizontal: false, vertical: true)
+                        TextField("API Key", text: fmtUseSameKey ? $txApiKey : $fmtApiKey, prompt: Text("Required"))
+                            .textFieldStyle(.roundedBorder)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .disabled(fmtUseSameKey)
+                        
+                        if hasTxProvider {
+                            Toggle("Use same API key", isOn: $fmtUseSameKey)
                         }
                         
                         TextField("Model", text: $fmtModel, prompt: Text(selectedFmtProvider.defaultModel))
@@ -162,6 +162,7 @@ struct SettingsView: View {
                 Button("Cancel") { onCancel?() }
                     .keyboardShortcut(.cancelAction)
                 Button("Save") {
+                    let savedFmtKey = fmtUseSameKey ? "" : fmtApiKey
                     let config: [String: Any] = [
                         "hotkey": hotkey,
                         "transcription": [
@@ -171,7 +172,7 @@ struct SettingsView: View {
                         ] as [String: Any],
                         "formatting": [
                             "provider": fmtProvider,
-                            "api_key": fmtApiKey,
+                            "api_key": savedFmtKey,
                             "model": fmtModel,
                             "style": fmtStyle
                         ] as [String: Any]
