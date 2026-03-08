@@ -70,6 +70,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsDelegate {
         setupHotkey()
         setupEngines()
         preloadSounds()
+        overlayPanel.setOnClickToRecord { [weak self] in self?.startClickRecording() }
         overlayPanel.orderFront(nil)
         startOnboardingIfNeeded()
         log("Setup complete — ready")
@@ -263,6 +264,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsDelegate {
         log("Advancing onboarding from: \(String(describing: step))")
         switch step {
         case .success:
+            overlayPanel.advanceOnboarding(to: .clickTip)
+        case .clickTip:
             overlayPanel.advanceOnboarding(to: .apiTip)
         case .apiTip:
             overlayPanel.advanceOnboarding(to: .formattingTip)
@@ -289,7 +292,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsDelegate {
         // Hold-to-confirm only for actual onboarding confirmation screens
         if let step = overlayPanel.currentOnboardingStep {
             switch step {
-            case .success, .apiTip, .formattingTip, .welcome:
+            case .success, .clickTip, .apiTip, .formattingTip, .welcome:
                 log("Hold-to-confirm for: \(step)")
                 overlayPanel.pressDown()
                 let workItem = DispatchWorkItem { [weak self] in
@@ -593,6 +596,51 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsDelegate {
         updateIcon(.idle)
         overlayPanel.dismiss()
         restoreOnboardingIfNeeded()
+    }
+
+    // MARK: - Click-to-Record
+
+    private func startClickRecording() {
+        log("Pill clicked — starting hands-free recording")
+        guard isEnabled, state == .idle else {
+            log("Skipped click: enabled=\(isEnabled) state=\(state)")
+            return
+        }
+        guard UserDefaults.standard.bool(forKey: SettingsKey.onboardingComplete) else { return }
+
+        state = .recording
+        recordingStart = Date()
+        peakAudioLevel = 0
+        updateIcon(.recording)
+        overlayPanel.showRecording()
+
+        audioRecorder.onLevelUpdate = { [weak self] level in
+            self?.overlayPanel.updateLevel(level)
+            if level > (self?.peakAudioLevel ?? 0) {
+                self?.peakAudioLevel = level
+            }
+        }
+        audioRecorder.onBandLevels = { [weak self] bands in
+            self?.overlayPanel.updateBandLevels(bands)
+        }
+
+        do {
+            try audioRecorder.start()
+            playSound("Blow")
+
+            // Immediately enter hands-free mode
+            state = .handsFreeRecording
+            handsFreeEntryTime = nil
+            overlayPanel.showHandsFreeRecording(
+                onPauseResume: { [weak self] in self?.toggleHandsFreePause() },
+                onStop: { [weak self] in self?.stopHandsFreeRecording() }
+            )
+        } catch {
+            log("Recording failed: \(error)")
+            state = .idle
+            updateIcon(.idle)
+            overlayPanel.dismiss()
+        }
     }
 
     // MARK: - Hands-Free Recording
