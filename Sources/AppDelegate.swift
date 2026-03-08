@@ -53,6 +53,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsDelegate {
     }
 
     private func playSound(_ name: String) {
+        guard UserDefaults.standard.object(forKey: SettingsKey.soundsEnabled) as? Bool ?? true else { return }
         guard let player = soundPlayers[name] else { return }
         player.currentTime = 0
         player.play()
@@ -75,7 +76,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsDelegate {
         setupEngines()
         preloadSounds()
         overlayPanel.setOnClickToRecord { [weak self] in self?.startClickRecording() }
-        overlayPanel.orderFront(nil)
+        let alwaysVisible = UserDefaults.standard.object(forKey: SettingsKey.alwaysVisiblePill) as? Bool ?? true
+        overlayPanel.setGradientEnabled(UserDefaults.standard.object(forKey: SettingsKey.gradientEnabled) as? Bool ?? true)
+        overlayPanel.setAlwaysVisible(alwaysVisible)
+        if alwaysVisible {
+            overlayPanel.orderFront(nil)
+        }
         startOnboardingIfNeeded()
         log("Setup complete — ready")
     }
@@ -175,6 +181,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsDelegate {
             let hotkeyType = UserDefaults.standard.string(forKey: SettingsKey.hotkey) ?? "fn"
             overlayPanel.setHotkeyLabel(hotkeyType == "option" ? "option" : "fn")
         }
+        overlayPanel.setGradientEnabled(UserDefaults.standard.object(forKey: SettingsKey.gradientEnabled) as? Bool ?? true)
+        overlayPanel.setAlwaysVisible(UserDefaults.standard.object(forKey: SettingsKey.alwaysVisiblePill) as? Bool ?? true)
     }
     
     // MARK: - Permissions

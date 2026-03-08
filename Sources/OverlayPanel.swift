@@ -202,6 +202,9 @@ class OverlayPanel: NSPanel {
             overlayState.mode = .idle
         }
         updatePillTarget()
+        if !overlayState.alwaysVisible && overlayState.onboardingStep == nil {
+            orderOut(nil)
+        }
     }
 
     var currentOnboardingStep: OnboardingStep? {
@@ -213,6 +216,8 @@ class OverlayPanel: NSPanel {
             overlayState.onboardingStep = step
         }
         updatePillTarget()
+        // Onboarding always requires the pill to be visible
+        orderFront(nil)
     }
 
     func setHotkeyLabel(_ label: String) {
@@ -247,10 +252,29 @@ class OverlayPanel: NSPanel {
             overlayState.onboardingStep = nil
         }
         updatePillTarget()
+        if !overlayState.alwaysVisible && overlayState.mode == .idle {
+            orderOut(nil)
+        }
     }
 
     func setOnClickToRecord(_ callback: @escaping () -> Void) {
         overlayState.onClickToRecord = callback
+    }
+
+    func setGradientEnabled(_ enabled: Bool) {
+        overlayState.gradientEnabled = enabled
+    }
+
+    func setAlwaysVisible(_ visible: Bool) {
+        overlayState.alwaysVisible = visible
+        // If currently idle (not recording/processing), show or hide accordingly
+        if overlayState.mode == .idle && overlayState.onboardingStep == nil {
+            if visible {
+                orderFront(nil)
+            } else {
+                orderOut(nil)
+            }
+        }
     }
 
 }
@@ -298,6 +322,8 @@ class OverlayState: ObservableObject {
     @Published var isHandsFree: Bool = false
     @Published var isPaused: Bool = false
     @Published var isHovering: Bool = false
+    @Published var gradientEnabled: Bool = true
+    @Published var alwaysVisible: Bool = true
     var onPauseResume: (() -> Void)?
     var onStop: (() -> Void)?
     var onClickToRecord: (() -> Void)?
@@ -327,7 +353,7 @@ struct OverlayView: View {
         }
     }
 
-    private var showGradient: Bool { isExpanded || state.isHovering }
+    private var showGradient: Bool { (isExpanded || state.isHovering) && state.gradientEnabled }
 
     private var audioBounceFactor: CGFloat {
         guard state.mode == .recording, !state.isPaused else { return 1.0 }
