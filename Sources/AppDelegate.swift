@@ -78,10 +78,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsDelegate {
         overlayPanel.setOnClickToRecord { [weak self] in self?.startClickRecording() }
         let alwaysVisible = UserDefaults.standard.object(forKey: SettingsKey.alwaysVisiblePill) as? Bool ?? true
         overlayPanel.setGradientEnabled(UserDefaults.standard.object(forKey: SettingsKey.gradientEnabled) as? Bool ?? true)
-        overlayPanel.setAlwaysVisible(alwaysVisible)
-        if alwaysVisible {
-            overlayPanel.orderFront(nil)
-        }
+        overlayPanel.orderFront(nil)
+        overlayPanel.setAlwaysVisible(alwaysVisible, animated: false)
         startOnboardingIfNeeded()
         log("Setup complete — ready")
     }

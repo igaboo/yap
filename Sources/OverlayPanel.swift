@@ -87,12 +87,43 @@ class OverlayPanel: NSPanel {
         updatePillTarget()
     }
     
+    private var onScreenY: CGFloat {
+        let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        return screenFrame.minY + 330 - frame.height
+    }
+
+    private var offScreenY: CGFloat {
+        let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        return screenFrame.minY - frame.height
+    }
+
+    private func slideIn() {
+        orderFront(nil)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.5
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+            animator().setFrameOrigin(NSPoint(x: frame.origin.x, y: onScreenY))
+        }
+    }
+
+    private func slideOut() {
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.4
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
+            animator().setFrameOrigin(NSPoint(x: frame.origin.x, y: offScreenY))
+        }
+    }
+
     func showRecording() {
         errorDismissWork?.cancel()
         errorDismissWork = nil
         overlayState.audioLevel = 0
         alphaValue = 1
-        orderFront(nil)
+        if !overlayState.alwaysVisible {
+            slideIn()
+        } else {
+            orderFront(nil)
+        }
         withAnimation(.timingCurve(0.16, 1, 0.3, 1, duration: 0.5)) {
             overlayState.mode = .recording
         }
@@ -203,7 +234,7 @@ class OverlayPanel: NSPanel {
         }
         updatePillTarget()
         if !overlayState.alwaysVisible && overlayState.onboardingStep == nil {
-            orderOut(nil)
+            slideOut()
         }
     }
 
@@ -253,7 +284,7 @@ class OverlayPanel: NSPanel {
         }
         updatePillTarget()
         if !overlayState.alwaysVisible && overlayState.mode == .idle {
-            orderOut(nil)
+            slideOut()
         }
     }
 
@@ -265,14 +296,20 @@ class OverlayPanel: NSPanel {
         overlayState.gradientEnabled = enabled
     }
 
-    func setAlwaysVisible(_ visible: Bool) {
+    func setAlwaysVisible(_ visible: Bool, animated: Bool = true) {
         overlayState.alwaysVisible = visible
-        // If currently idle (not recording/processing), show or hide accordingly
-        if overlayState.mode == .idle && overlayState.onboardingStep == nil {
-            if visible {
-                orderFront(nil)
+        guard overlayState.mode == .idle && overlayState.onboardingStep == nil else { return }
+        if visible {
+            if animated {
+                slideIn()
             } else {
-                orderOut(nil)
+                setFrameOrigin(NSPoint(x: frame.origin.x, y: onScreenY))
+            }
+        } else {
+            if animated {
+                slideOut()
+            } else {
+                setFrameOrigin(NSPoint(x: frame.origin.x, y: offScreenY))
             }
         }
     }
