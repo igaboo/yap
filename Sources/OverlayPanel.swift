@@ -5,6 +5,13 @@ import SwiftUI
 /// Fixes the "double-click to activate" issue on NSPanel.
 class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// Let clicks on the gradient background pass through to apps underneath.
+    /// Only interactive subviews (pill buttons) will capture mouse events.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
+    }
 }
 
 /// A floating pill-shaped overlay at the bottom of the screen
@@ -242,6 +249,7 @@ struct OverlayView: View {
         ZStack {
             if isExpanded {
                 LavaLampBackground(energy: gradientEnergy)
+                    .allowsHitTesting(false)
                     .transition(.opacity)
                     .animation(.easeInOut(duration: 0.8), value: gradientEnergy)
             }
