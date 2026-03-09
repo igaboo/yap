@@ -32,6 +32,11 @@ enum SettingsKey {
 
     // ElevenLabs options
     static let elLanguageCode = "elLanguageCode"
+
+    // Appearance options
+    static let soundsEnabled = "soundsEnabled"
+    static let gradientEnabled = "gradientEnabled"
+    static let alwaysVisiblePill = "alwaysVisiblePill"
 }
 
 // MARK: - Reusable Components
@@ -108,6 +113,11 @@ struct SettingsView: View {
     // ElevenLabs options
     @State private var elLanguageCode: String
 
+    // Appearance options
+    @State private var soundsEnabled: Bool
+    @State private var gradientEnabled: Bool
+    @State private var alwaysVisiblePill: Bool
+
     var onSave: (() -> Void)?
     var onCancel: (() -> Void)?
 
@@ -136,6 +146,10 @@ struct SettingsView: View {
         _geminiTemperature = State(initialValue: d.object(forKey: SettingsKey.geminiTemperature) as? Double ?? 0.0)
 
         _elLanguageCode = State(initialValue: d.string(forKey: SettingsKey.elLanguageCode) ?? "")
+
+        _soundsEnabled = State(initialValue: d.object(forKey: SettingsKey.soundsEnabled) as? Bool ?? true)
+        _gradientEnabled = State(initialValue: d.object(forKey: SettingsKey.gradientEnabled) as? Bool ?? true)
+        _alwaysVisiblePill = State(initialValue: d.object(forKey: SettingsKey.alwaysVisiblePill) as? Bool ?? true)
     }
 
     private var selectedTxProvider: TranscriptionProvider {
@@ -383,6 +397,13 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+
+                    // Appearance
+                    Section(header: Text("Appearance")) {
+                        Toggle("Sound effects", isOn: $soundsEnabled)
+                        Toggle("Gradient background", isOn: $gradientEnabled)
+                        Toggle("Always-visible idle pill", isOn: $alwaysVisiblePill)
+                    }
                 }
                 .formStyle(.grouped)
                 .scrollContentBackground(.hidden)
@@ -432,6 +453,11 @@ struct SettingsView: View {
 
                     // ElevenLabs options
                     d.set(elLanguageCode, forKey: SettingsKey.elLanguageCode)
+
+                    // Appearance options
+                    d.set(soundsEnabled, forKey: SettingsKey.soundsEnabled)
+                    d.set(gradientEnabled, forKey: SettingsKey.gradientEnabled)
+                    d.set(alwaysVisiblePill, forKey: SettingsKey.alwaysVisiblePill)
 
                     onSave?()
                 }

@@ -87,12 +87,45 @@ class OverlayPanel: NSPanel {
         updatePillTarget()
     }
     
+    private var onScreenY: CGFloat {
+        let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        return screenFrame.minY + 330 - frame.height
+    }
+
+    private var offScreenY: CGFloat {
+        let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        return screenFrame.minY - frame.height
+    }
+
+    private func slideIn() {
+        orderFront(nil)
+        let target = NSRect(x: frame.origin.x, y: onScreenY, width: frame.width, height: frame.height)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.5
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+            animator().setFrame(target, display: true)
+        }
+    }
+
+    private func slideOut() {
+        let target = NSRect(x: frame.origin.x, y: offScreenY, width: frame.width, height: frame.height)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.4
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
+            animator().setFrame(target, display: true)
+        }
+    }
+
     func showRecording() {
         errorDismissWork?.cancel()
         errorDismissWork = nil
         overlayState.audioLevel = 0
         alphaValue = 1
-        orderFront(nil)
+        if !overlayState.alwaysVisible {
+            slideIn()
+        } else {
+            orderFront(nil)
+        }
         withAnimation(.timingCurve(0.16, 1, 0.3, 1, duration: 0.5)) {
             overlayState.mode = .recording
         }
@@ -202,6 +235,9 @@ class OverlayPanel: NSPanel {
             overlayState.mode = .idle
         }
         updatePillTarget()
+        if !overlayState.alwaysVisible && overlayState.onboardingStep == nil {
+            slideOut()
+        }
     }
 
     var currentOnboardingStep: OnboardingStep? {
@@ -213,6 +249,8 @@ class OverlayPanel: NSPanel {
             overlayState.onboardingStep = step
         }
         updatePillTarget()
+        // Onboarding always requires the pill to be visible
+        orderFront(nil)
     }
 
     func setHotkeyLabel(_ label: String) {
@@ -247,10 +285,35 @@ class OverlayPanel: NSPanel {
             overlayState.onboardingStep = nil
         }
         updatePillTarget()
+        if !overlayState.alwaysVisible && overlayState.mode == .idle {
+            slideOut()
+        }
     }
 
     func setOnClickToRecord(_ callback: @escaping () -> Void) {
         overlayState.onClickToRecord = callback
+    }
+
+    func setGradientEnabled(_ enabled: Bool) {
+        overlayState.gradientEnabled = enabled
+    }
+
+    func setAlwaysVisible(_ visible: Bool, animated: Bool = true) {
+        overlayState.alwaysVisible = visible
+        guard overlayState.mode == .idle && overlayState.onboardingStep == nil else { return }
+        if visible {
+            if animated {
+                slideIn()
+            } else {
+                setFrameOrigin(NSPoint(x: frame.origin.x, y: onScreenY))
+            }
+        } else {
+            if animated {
+                slideOut()
+            } else {
+                setFrameOrigin(NSPoint(x: frame.origin.x, y: offScreenY))
+            }
+        }
     }
 
 }
@@ -298,6 +361,8 @@ class OverlayState: ObservableObject {
     @Published var isHandsFree: Bool = false
     @Published var isPaused: Bool = false
     @Published var isHovering: Bool = false
+    @Published var gradientEnabled: Bool = true
+    @Published var alwaysVisible: Bool = true
     var onPauseResume: (() -> Void)?
     var onStop: (() -> Void)?
     var onClickToRecord: (() -> Void)?
@@ -327,7 +392,7 @@ struct OverlayView: View {
         }
     }
 
-    private var showGradient: Bool { isExpanded || state.isHovering }
+    private var showGradient: Bool { (isExpanded || state.isHovering) && state.gradientEnabled }
 
     private var audioBounceFactor: CGFloat {
         guard state.mode == .recording, !state.isPaused else { return 1.0 }
