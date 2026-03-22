@@ -8,6 +8,7 @@
 
   let t = $state(0);
   let slideOffset = $state(60); // starts 60% below — off screen
+  let fadeOpacity = $state(0);
   let animId = 0;
   let startTime = 0;
   let prevVisible = false;
@@ -49,12 +50,26 @@
     if (!startTime) startTime = timestamp;
     t = (timestamp - startTime) / 1000;
 
-    // Animate slideOffset
+    // Animate slideOffset + fadeOpacity
     if (slideStart > 0) {
       const elapsed = timestamp - slideStart;
       const progress = Math.min(elapsed / SLIDE_DURATION, 1);
       slideOffset = slideFrom + (slideTo - slideFrom) * easeOut(progress);
-      if (progress >= 1) slideStart = 0;
+
+      // Fade: ramp in first 150ms, ramp out last 150ms
+      if (slideTo === 0) {
+        // Sliding IN — fade 0→1 in first 150ms
+        fadeOpacity = Math.min(elapsed / 150, 1);
+      } else {
+        // Sliding OUT — fade 1→0 in last 150ms
+        const remaining = SLIDE_DURATION - elapsed;
+        fadeOpacity = Math.min(remaining / 150, 1);
+      }
+
+      if (progress >= 1) {
+        slideStart = 0;
+        fadeOpacity = slideTo === 0 ? 1 : 0;
+      }
     }
 
     animId = requestAnimationFrame(loop);
@@ -88,7 +103,7 @@
 
 <div
   class="lava-lamp"
-  style="background: {blobStyles.join(', ')};"
+  style="background: {blobStyles.join(', ')}; opacity: {fadeOpacity};"
 ></div>
 
 <style>
