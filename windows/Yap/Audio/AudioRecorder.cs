@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
@@ -7,7 +8,7 @@ using Yap.Core;
 namespace Yap.Audio
 {
     /// <summary>
-    /// Records audio from the default capture device using WASAPI.
+    /// Records audio from a capture device using WASAPI.
     /// WASAPI provides IEEE Float32 samples which are converted to 16-bit PCM for WAV output.
     /// </summary>
     public class AudioRecorder : IDisposable
@@ -18,6 +19,28 @@ namespace Yap.Audio
         private bool _disposed;
         private int _nativeChannels;
         private int _nativeSampleRate;
+
+        /// <summary>
+        /// Returns a list of active capture (microphone) devices.
+        /// Each entry is (deviceId, friendlyName).
+        /// </summary>
+        public static List<(string Id, string Name)> GetCaptureDevices()
+        {
+            var devices = new List<(string, string)>();
+            try
+            {
+                var enumerator = new MMDeviceEnumerator();
+                foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active))
+                {
+                    devices.Add((device.ID, device.FriendlyName));
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"AudioRecorder: failed to enumerate devices: {ex.Message}");
+            }
+            return devices;
+        }
 
         /// <summary>Temporary file path for the current recording.</summary>
         public string TempFilePath { get; } = Path.Combine(Path.GetTempPath(), "yap_recording.wav");
@@ -43,13 +66,31 @@ namespace Yap.Audio
 
             IsPaused = false;
 
-            // Get the default capture device via MMDeviceEnumerator (reliable on Windows 10/11)
+            // Get the capture device — use configured device ID, or fall back to system default
             var enumerator = new MMDeviceEnumerator();
             MMDevice device;
             try
             {
-                device = enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
-                Logger.Log($"AudioRecorder: device='{device.FriendlyName}'");
+                var configDeviceId = Config.Current.CaptureDeviceId;
+                if (!string.IsNullOrEmpty(configDeviceId))
+                {
+                    try
+                    {
+                        device = enumerator.GetDevice(configDeviceId);
+                        Logger.Log($"AudioRecorder: using configured device='{device.FriendlyName}'");
+                    }
+                    catch
+                    {
+                        Logger.Log($"AudioRecorder: configured device not found, falling back to default");
+                        device = enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
+                        Logger.Log($"AudioRecorder: device='{device.FriendlyName}'");
+                    }
+                }
+                else
+                {
+                    device = enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
+                    Logger.Log($"AudioRecorder: device='{device.FriendlyName}'");
+                }
             }
             catch (Exception ex)
             {

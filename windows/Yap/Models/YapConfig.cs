@@ -12,6 +12,10 @@ namespace Yap.Models
         [JsonPropertyName("hotkey")]
         public string Hotkey { get; set; } = "capslock";
 
+        // Audio input device (empty = system default)
+        [JsonPropertyName("captureDeviceId")]
+        public string CaptureDeviceId { get; set; } = "";
+
         // Transcription
         [JsonPropertyName("txProvider")]
         public string TxProvider { get; set; } = "none";
@@ -91,6 +95,7 @@ namespace Yap.Models
             return new YapConfig
             {
                 Hotkey = Hotkey,
+                CaptureDeviceId = CaptureDeviceId,
                 TxProvider = TxProvider,
                 TxApiKey = TxApiKey,
                 TxModel = TxModel,

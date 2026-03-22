@@ -78,6 +78,15 @@
                     </StackPanel>
                 </GroupBox>
 
+                <!-- Microphone -->
+                <GroupBox Header="Microphone">
+                    <StackPanel Margin="8">
+                        <Label Content="Input Device"/>
+                        <ComboBox x:Name="MicDeviceCombo" Margin="0,2,0,4"/>
+                        <TextBlock Foreground="#666666" FontSize="10" Text="Select the microphone to use for recording"/>
+                    </StackPanel>
+                </GroupBox>
+
                 <!-- Transcription -->
                 <GroupBox Header="Transcription">
                     <StackPanel Margin="8">

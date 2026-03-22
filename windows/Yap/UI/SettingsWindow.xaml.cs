@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Microsoft.Win32;
+using Yap.Audio;
 using Yap.Core;
 using Yap.Formatting;
 using Yap.Input;
@@ -49,6 +50,9 @@ namespace Yap.UI
             _capturedHotkeyDisplayName = HotkeyManager.VirtualKeyToName(vk);
             HotkeyButton.Content = _capturedHotkeyDisplayName;
             HotkeyCurrentLabel.Text = $"Current hotkey: {_capturedHotkeyDisplayName}";
+
+            // Microphone device
+            LoadMicDevices(config.CaptureDeviceId);
 
             // Transcription
             SelectComboByTag(TxProviderCombo, config.TxProvider);
@@ -121,6 +125,7 @@ namespace Yap.UI
             var config = Config.Current.Clone();
 
             config.Hotkey = _capturedHotkeyConfigName;
+            config.CaptureDeviceId = (MicDeviceCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
             config.TxProvider = GetComboTag(TxProviderCombo) ?? "none";
             config.TxApiKey = TxApiKeyBox.Text.Trim();
             config.TxModel = TxModelBox.Text.Trim();
@@ -372,6 +377,29 @@ namespace Yap.UI
             Config.Save(config);
             MessageBox.Show("Onboarding has been reset. It will start again next time you use Yap.",
                 "Reset Onboarding", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void LoadMicDevices(string selectedDeviceId)
+        {
+            MicDeviceCombo.Items.Clear();
+
+            // Add "System Default" option
+            var defaultItem = new ComboBoxItem { Content = "System Default", Tag = "" };
+            MicDeviceCombo.Items.Add(defaultItem);
+            MicDeviceCombo.SelectedItem = defaultItem;
+
+            // Enumerate all active capture devices
+            var devices = AudioRecorder.GetCaptureDevices();
+            foreach (var (id, name) in devices)
+            {
+                var item = new ComboBoxItem { Content = name, Tag = id };
+                MicDeviceCombo.Items.Add(item);
+
+                if (id == selectedDeviceId)
+                {
+                    MicDeviceCombo.SelectedItem = item;
+                }
+            }
         }
 
         private void UpdateTxProviderVisibility()
