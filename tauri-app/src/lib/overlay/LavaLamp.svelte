@@ -114,19 +114,30 @@
   }
 
   function startAnimation() {
-    if (!canvas) return;
+    if (!canvas) {
+      console.log('[LavaLamp] no canvas element');
+      return;
+    }
 
     // Set canvas size to match display
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
+    console.log(`[LavaLamp] canvas rect: ${rect.width}x${rect.height}, dpr: ${dpr}`);
+
+    if (rect.width === 0 || rect.height === 0) {
+      console.log('[LavaLamp] canvas has zero size, retrying in 100ms');
+      setTimeout(() => startAnimation(), 100);
+      return;
+    }
+
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
 
     const ctx = canvas.getContext('2d');
     if (ctx) {
       ctx.scale(dpr, dpr);
-      // Apply Gaussian blur — reduced from 55px since canvas is clipped to pill shape
       ctx.filter = 'blur(30px)';
+      console.log(`[LavaLamp] started: ${canvas.width}x${canvas.height}`);
     }
 
     startTime = 0;
@@ -157,7 +168,10 @@
   class="lava-lamp-wrapper"
   style="opacity: {visible ? 1 : 0}; transition: opacity 800ms ease-in-out;"
 >
-  <canvas bind:this={canvas}></canvas>
+  <canvas
+    bind:this={canvas}
+    style="background: rgba(255,0,0,0.2);"
+  ></canvas>
 </div>
 
 <style>
