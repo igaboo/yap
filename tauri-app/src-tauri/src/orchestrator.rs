@@ -732,22 +732,30 @@ pub fn init(app: &AppHandle) {
         // - Can appear alongside full-screen apps (fullScreenAuxiliary)
         #[cfg(target_os = "macos")]
         {
-            use tauri::Emitter;
             if let Ok(ns_win) = overlay.ns_window() {
                 unsafe {
                     use objc2::msg_send;
-                    use objc2::runtime::AnyObject;
+                    use objc2::runtime::{AnyClass, AnyObject};
+
                     let win = ns_win as *mut AnyObject;
+
                     // NSWindowCollectionBehavior:
-                    //   canJoinAllSpaces = 1 << 0 = 1
-                    //   fullScreenAuxiliary = 1 << 8 = 256
-                    //   stationary = 1 << 4 = 16
+                    //   canJoinAllSpaces = 1, stationary = 16, fullScreenAuxiliary = 256
                     let behavior: u64 = 1 | 16 | 256;
                     let _: () = msg_send![win, setCollectionBehavior: behavior];
-                    // Also set window level higher (floating = 3, or status = 25)
+
+                    // Window level: status (25) for proper always-on-top
                     let _: () = msg_send![win, setLevel: 25_i64];
+
+                    // Force NSWindow background to fully transparent
+                    let ns_color_class = AnyClass::get(c"NSColor").unwrap();
+                    let clear_color: *mut AnyObject = msg_send![ns_color_class, clearColor];
+                    let _: () = msg_send![win, setBackgroundColor: clear_color];
+
+                    // Disable window shadow entirely
+                    let _: () = msg_send![win, setHasShadow: false];
                 }
-                log::info("Overlay: set canJoinAllSpaces + stationary + fullScreenAuxiliary");
+                log::info("Overlay: set transparent bg, no shadow, all Spaces, stationary");
             }
         }
 
