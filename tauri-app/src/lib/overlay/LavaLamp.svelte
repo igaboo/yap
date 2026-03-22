@@ -1,8 +1,7 @@
 <script lang="ts">
   /**
-   * Lava lamp gradient using CSS radial-gradient divs instead of Canvas.
-   * Canvas ctx.filter='blur()' silently fails on WebKit in transparent windows.
-   * CSS approach is simpler and guaranteed to render.
+   * Lava lamp gradient using CSS radial-gradients.
+   * Blobs move as a group (shared drift) with small individual offsets.
    */
 
   let { energy = 0.5, visible = true }: { energy?: number; visible?: boolean } = $props();
@@ -12,24 +11,31 @@
   let startTime = 0;
 
   const blobs = [
-    { color: '147, 51, 234',  xFreq: 0.7,  yFreq: 0.5,  xAmp: 25, yAmp: 12, xPhase: 0,   yPhase: 0,   size: 200, scale: 1.0 },
-    { color: '59, 130, 246',  xFreq: 0.6,  yFreq: 0.45, xAmp: 30, yAmp: 14, xPhase: 1.5, yPhase: 1.0, size: 240, scale: 0.9, useSin: true },
-    { color: '34, 211, 238',  xFreq: 0.8,  yFreq: 0.6,  xAmp: 20, yAmp: 10, xPhase: 3.0, yPhase: 2.0, size: 180, scale: 0.85 },
-    { color: '99, 102, 241',  xFreq: 0.55, yFreq: 0.7,  xAmp: 28, yAmp: 12, xPhase: 4.5, yPhase: 3.5, size: 220, scale: 0.9, useSin: true },
+    { color: '147, 51, 234',  offsetX: -8,  offsetY: -3,  size: 220, scale: 1.0  },  // purple
+    { color: '59, 130, 246',  offsetX:  5,  offsetY:  2,  size: 260, scale: 0.9  },  // blue
+    { color: '34, 211, 238',  offsetX: -4,  offsetY:  4,  size: 190, scale: 0.85 },  // cyan
+    { color: '99, 102, 241',  offsetX:  7,  offsetY: -2,  size: 240, scale: 0.9  },  // indigo
   ];
 
-  // Computed blob positions (reactive)
   let blobStyles = $derived.by(() => {
     const speed = 0.4 + energy * 0.6;
     const brightness = 0.5 + energy * 0.4;
 
-    return blobs.map(b => {
-      const xFn = b.useSin ? Math.sin : Math.cos;
-      const yFn = b.useSin ? Math.cos : Math.sin;
-      const x = 50 + xFn(t * b.xFreq * speed + b.xPhase) * b.xAmp;
-      const y = 70 + yFn(t * b.yFreq * speed + b.yPhase) * b.yAmp;
+    // Shared group motion — all blobs drift together
+    const groupX = Math.cos(t * 0.3 * speed) * 8;
+    const groupY = Math.sin(t * 0.2 * speed) * 4;
+
+    return blobs.map((b, i) => {
+      // Small individual wiggle on top of group motion
+      const wiggleX = Math.sin(t * (0.5 + i * 0.15) + i * 1.5) * 4;
+      const wiggleY = Math.cos(t * (0.4 + i * 0.12) + i * 2.0) * 3;
+
+      const x = 50 + groupX + b.offsetX + wiggleX;
+      // y=90% puts blobs mostly off-screen at bottom, peeking up behind the pill
+      const y = 90 + groupY + b.offsetY + wiggleY;
+
       const alpha = brightness * b.scale;
-      return `radial-gradient(ellipse ${b.size}px ${b.size * 0.5}px at ${x}% ${y}%, rgba(${b.color}, ${alpha.toFixed(2)}) 0%, rgba(${b.color}, 0) 70%)`;
+      return `radial-gradient(ellipse ${b.size}px ${b.size * 0.55}px at ${x}% ${y}%, rgba(${b.color}, ${alpha.toFixed(2)}) 0%, rgba(${b.color}, 0) 70%)`;
     });
   });
 
