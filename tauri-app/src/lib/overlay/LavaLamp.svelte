@@ -21,14 +21,14 @@
     const speed = 0.4 + energy * 0.6;
     const brightness = 0.5 + energy * 0.4;
 
-    // Shared group motion — all blobs drift together
-    const groupX = Math.cos(t * 0.3 * speed) * 8;
-    const groupY = Math.sin(t * 0.2 * speed) * 4;
+    // Shared group motion — use constant speed so blobs don't jump on energy change
+    const groupX = Math.cos(t * 0.2) * 6;
+    const groupY = Math.sin(t * 0.15) * 3;
 
     return blobs.map((b, i) => {
-      // Small individual wiggle on top of group motion
-      const wiggleX = Math.sin(t * (0.5 + i * 0.15) + i * 1.5) * 4;
-      const wiggleY = Math.cos(t * (0.4 + i * 0.12) + i * 2.0) * 3;
+      // Small individual wiggle (constant rate, energy only affects brightness)
+      const wiggleX = Math.sin(t * (0.35 + i * 0.1) + i * 1.5) * 3;
+      const wiggleY = Math.cos(t * (0.25 + i * 0.08) + i * 2.0) * 2;
 
       const x = 50 + groupX + b.offsetX + wiggleX;
       // y=90% puts blobs mostly off-screen at bottom, peeking up behind the pill

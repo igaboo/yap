@@ -89,14 +89,16 @@
 
   // Pill scale factor
   let pillScale = $derived.by(() => {
-    if (isExpanded) return 1.0;
-    return hovering ? 0.65 : 0.5;
+    if (isExpanded) return 0.75;
+    return hovering ? 0.72 : 0.65;
   });
 
   // Combined transform for the pill
   let pillTransform = $derived.by(() => {
-    const scale = pillScale * audioBounceFactor * (isPressed ? 0.85 : 1.0) * (overlayData.mode === 'processing' ? 0.8 : 1.0);
-    const offsetY = isExpanded ? 0 : 40;
+    const processingScale = overlayData.mode === 'processing' ? 0.85 : 1.0;
+    const pressScale = isPressed ? 0.85 : 1.0;
+    const scale = pillScale * audioBounceFactor * pressScale * processingScale;
+    const offsetY = isExpanded ? 0 : 15;
     return `scale(${scale}) translateY(${offsetY}px)`;
   });
 
