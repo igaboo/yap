@@ -65,7 +65,7 @@
     ctx.clearRect(0, 0, w, h);
 
     const speed = 0.4 + energy * 0.6;
-    const brightness = 0.35 + energy * 0.35;
+    const brightness = 0.5 + energy * 0.4;
 
     for (const blob of blobs) {
       const blobBrightness = brightness * blob.brightnessScale;
@@ -136,7 +136,8 @@
     const ctx = canvas.getContext('2d');
     if (ctx) {
       ctx.scale(dpr, dpr);
-      ctx.filter = 'blur(30px)';
+      // Skip ctx.filter blur — use CSS filter on the canvas element instead
+      // (ctx.filter can silently swallow content on some WebKit builds)
       console.log(`[LavaLamp] started: ${canvas.width}x${canvas.height}`);
     }
 
@@ -168,10 +169,7 @@
   class="lava-lamp-wrapper"
   style="opacity: {visible ? 1 : 0}; transition: opacity 800ms ease-in-out;"
 >
-  <canvas
-    bind:this={canvas}
-    style="background: rgba(255,0,0,0.2);"
-  ></canvas>
+  <canvas bind:this={canvas}></canvas>
 </div>
 
 <style>
@@ -186,5 +184,6 @@
     width: 100%;
     height: 100%;
     display: block;
+    filter: blur(30px);
   }
 </style>
