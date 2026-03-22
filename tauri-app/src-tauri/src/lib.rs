@@ -3,12 +3,18 @@ mod config;
 mod formatting;
 mod history;
 mod hotkey;
+mod orchestrator;
 mod paste;
 mod transcription;
 mod tray;
 
+use std::sync::Arc;
+
+use tauri::{Listener, Manager};
+
 use crate::config::AppConfig;
 use crate::history::HistoryEntry;
+use crate::orchestrator::Orchestrator;
 
 // ---------------------------------------------------------------------------
 // Tauri commands -- exposed to the frontend via invoke()
@@ -20,10 +26,12 @@ fn get_config() -> Result<AppConfig, String> {
     config::load()
 }
 
-/// Persist the full config to disk.
+/// Persist the full config to disk, then notify the orchestrator.
 #[tauri::command]
-fn save_config(cfg: AppConfig) -> Result<(), String> {
-    config::save(&cfg)
+fn save_config(cfg: AppConfig, orch: tauri::State<'_, Arc<Orchestrator>>) -> Result<(), String> {
+    config::save(&cfg)?;
+    orch.on_settings_changed();
+    Ok(())
 }
 
 /// Start recording audio from the default input device.
@@ -134,6 +142,40 @@ fn clear_history() -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
+// Orchestrator commands -- pipeline control from the frontend
+// ---------------------------------------------------------------------------
+
+/// Called when the user clicks the overlay pill.
+#[tauri::command]
+fn pill_clicked(orch: tauri::State<'_, Arc<Orchestrator>>) {
+    orch.on_pill_click();
+}
+
+/// Toggle pause/resume in hands-free recording mode.
+#[tauri::command]
+fn pause_resume(orch: tauri::State<'_, Arc<Orchestrator>>) {
+    orch.toggle_pause();
+}
+
+/// Stop hands-free recording and process the audio.
+#[tauri::command]
+fn stop_hands_free(orch: tauri::State<'_, Arc<Orchestrator>>) {
+    orch.stop_hands_free();
+}
+
+/// Toggle the enabled state (from tray menu).
+#[tauri::command]
+fn toggle_enabled(orch: tauri::State<'_, Arc<Orchestrator>>) {
+    orch.toggle_enabled();
+}
+
+/// Get the current pipeline state.
+#[tauri::command]
+fn get_pipeline_state(orch: tauri::State<'_, Arc<Orchestrator>>) -> orchestrator::AppState {
+    orch.state()
+}
+
+// ---------------------------------------------------------------------------
 // App entry point
 // ---------------------------------------------------------------------------
 
@@ -142,29 +184,46 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // Load config at startup.
-            let _ = config::load();
-
-            // Set up system tray.
+            // Initialize the orchestrator -- this loads config, starts
+            // the hotkey listener, sets up the tray, and begins the
+            // audio level poller.
             let handle = app.handle().clone();
-            let _ = tray::setup_tray(&handle);
+            orchestrator::init(&handle);
+
+            // Listen for tray toggle-enabled event
+            let handle2 = app.handle().clone();
+            app.listen("tray:toggle-enabled", move |_event| {
+                let orch: tauri::State<'_, Arc<Orchestrator>> = handle2.state();
+                orch.toggle_enabled();
+            });
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // Config
             get_config,
             save_config,
+            // Audio (direct access, still useful for frontend)
             start_recording,
             stop_recording,
             get_audio_levels,
             list_audio_devices,
+            // Transcription & formatting (direct access)
             transcribe,
             format_text,
+            // Paste
             paste_text,
+            // History
             get_history,
             add_history_entry,
             remove_history_entry,
             clear_history,
+            // Pipeline control (orchestrator)
+            pill_clicked,
+            pause_resume,
+            stop_hands_free,
+            toggle_enabled,
+            get_pipeline_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
