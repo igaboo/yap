@@ -726,6 +726,31 @@ pub fn init(app: &AppHandle) {
                 log::info(&format!("Overlay positioned at {},{} (screen {}x{}, scale {})", x as i32, y as i32, screen.width, screen.height, scale));
             }
         }
+        // Set macOS-specific window behaviors so the overlay:
+        // - Appears on ALL desktops/Spaces (canJoinAllSpaces)
+        // - Doesn't animate with Mission Control (stationary)
+        // - Can appear alongside full-screen apps (fullScreenAuxiliary)
+        #[cfg(target_os = "macos")]
+        {
+            use tauri::Emitter;
+            if let Ok(ns_win) = overlay.ns_window() {
+                unsafe {
+                    use objc2::msg_send;
+                    use objc2::runtime::AnyObject;
+                    let win = ns_win as *mut AnyObject;
+                    // NSWindowCollectionBehavior:
+                    //   canJoinAllSpaces = 1 << 0 = 1
+                    //   fullScreenAuxiliary = 1 << 8 = 256
+                    //   stationary = 1 << 4 = 16
+                    let behavior: u64 = 1 | 16 | 256;
+                    let _: () = msg_send![win, setCollectionBehavior: behavior];
+                    // Also set window level higher (floating = 3, or status = 25)
+                    let _: () = msg_send![win, setLevel: 25_i64];
+                }
+                log::info("Overlay: set canJoinAllSpaces + stationary + fullScreenAuxiliary");
+            }
+        }
+
         let _ = overlay.show();
         log::info("Overlay window shown");
     } else {
