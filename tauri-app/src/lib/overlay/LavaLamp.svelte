@@ -72,14 +72,15 @@
     inset: -40px;
     pointer-events: none;
     opacity: 0;
-    transform: translateY(80px) scale(0.8);
-    transition: opacity 800ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform: translateY(60px);
+    transition: opacity 400ms ease-out,
                 transform 800ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .lava-lamp-outer.active {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
+    /* opacity arrives fast (400ms) so you see the upward slide (800ms) */
   }
 
   .lava-lamp-inner {
