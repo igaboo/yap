@@ -8,6 +8,8 @@ using Yap.Formatting;
 using Yap.Input;
 using Yap.Models;
 using Yap.Transcription;
+using ComboBox = System.Windows.Controls.ComboBox;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace Yap.UI
 {

@@ -10,6 +10,7 @@
     <ApplicationIcon>Resources\Icons\yap.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <WindowsSdkPackageVersion>10.0.19041.41</WindowsSdkPackageVersion>
     <Version>1.0.0</Version>

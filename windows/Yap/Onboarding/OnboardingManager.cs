@@ -115,7 +115,7 @@ namespace Yap.Onboarding
         /// <summary>
         /// Complete onboarding: set config flag, clear state, notify UI.
         /// </summary>
-        public void Finalize()
+        public void CompleteOnboarding()
         {
             _currentStep = null;
             _preTipStep = null;
@@ -370,10 +370,10 @@ namespace Yap.Onboarding
                     AdvanceTo(OnboardingStep.Welcome);
                     break;
                 case OnboardingStep.Welcome:
-                    Finalize();
+                    CompleteOnboarding();
                     break;
                 default:
-                    Finalize();
+                    CompleteOnboarding();
                     break;
             }
         }

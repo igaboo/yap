@@ -3,6 +3,7 @@ using System.Threading;
 using System.Windows;
 using Yap.Core;
 using Yap.UI;
+using Application = System.Windows.Application;
 
 namespace Yap
 {
