@@ -2,6 +2,8 @@
   /**
    * Lava lamp gradient using CSS radial-gradients.
    * Blobs move as a group (shared drift) with small individual offsets.
+   * Energy controls intensity via CSS opacity (smooth transition).
+   * Blob positions never depend on energy — prevents jumping.
    */
 
   let { energy = 0.5, visible = true }: { energy?: number; visible?: boolean } = $props();
@@ -17,27 +19,25 @@
     { color: '99, 102, 241',  offsetX:  7,  offsetY: -2,  size: 240, scale: 0.9  },  // indigo
   ];
 
+  // Blob positions — NO dependency on energy, only on t
   let blobStyles = $derived.by(() => {
-    const speed = 0.4 + energy * 0.6;
-    const brightness = 0.5 + energy * 0.4;
-
-    // Shared group motion — use constant speed so blobs don't jump on energy change
     const groupX = Math.cos(t * 0.2) * 6;
     const groupY = Math.sin(t * 0.15) * 3;
 
     return blobs.map((b, i) => {
-      // Small individual wiggle (constant rate, energy only affects brightness)
       const wiggleX = Math.sin(t * (0.35 + i * 0.1) + i * 1.5) * 3;
       const wiggleY = Math.cos(t * (0.25 + i * 0.08) + i * 2.0) * 2;
 
       const x = 50 + groupX + b.offsetX + wiggleX;
-      // y=90% puts blobs mostly off-screen at bottom, peeking up behind the pill
       const y = 90 + groupY + b.offsetY + wiggleY;
 
-      const alpha = brightness * b.scale;
+      const alpha = 0.7 * b.scale;
       return `radial-gradient(ellipse ${b.size}px ${b.size * 0.55}px at ${x}% ${y}%, rgba(${b.color}, ${alpha.toFixed(2)}) 0%, rgba(${b.color}, 0) 70%)`;
     });
   });
+
+  // Energy only controls opacity — smoothly transitions via CSS
+  let intensityOpacity = $derived(0.4 + energy * 0.6);
 
   function loop(timestamp: number) {
     if (!startTime) startTime = timestamp;
@@ -62,7 +62,7 @@
 <div
   class="lava-lamp"
   style="
-    opacity: {visible ? 1 : 0};
+    opacity: {visible ? intensityOpacity : 0};
     background: {blobStyles.join(', ')};
   "
 ></div>
@@ -72,7 +72,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    transition: opacity 800ms ease-in-out;
     filter: blur(40px);
+    transition: opacity 500ms ease-out;
   }
 </style>
