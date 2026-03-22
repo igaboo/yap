@@ -65,7 +65,7 @@
     ctx.clearRect(0, 0, w, h);
 
     const speed = 0.4 + energy * 0.6;
-    const brightness = 0.25 + energy * 0.25;
+    const brightness = 0.35 + energy * 0.35;
 
     for (const blob of blobs) {
       const blobBrightness = brightness * blob.brightnessScale;
