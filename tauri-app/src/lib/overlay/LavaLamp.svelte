@@ -1,189 +1,72 @@
 <script lang="ts">
   /**
-   * Canvas-based lava lamp gradient background.
-   * Four colored ellipses with Gaussian blur following Lissajous motion curves.
-   * Renders at 60fps via requestAnimationFrame.
+   * Lava lamp gradient using CSS radial-gradient divs instead of Canvas.
+   * Canvas ctx.filter='blur()' silently fails on WebKit in transparent windows.
+   * CSS approach is simpler and guaranteed to render.
    */
 
   let { energy = 0.5, visible = true }: { energy?: number; visible?: boolean } = $props();
 
-  let canvas: HTMLCanvasElement | undefined = $state();
-  let animationId: number = 0;
-  let startTime: number = 0;
+  let t = $state(0);
+  let animId = 0;
+  let startTime = 0;
 
-  // Blob definitions — colors, sizes, and Lissajous parameters
-  // Blob sizes/amplitudes for 800x350 window, centered around pill at bottom
   const blobs = [
-    {
-      color: [147, 51, 234],  // purple
-      width: 200,
-      height: 100,
-      xFreq: 0.7, yFreq: 0.5,
-      xAmp: 100, yAmp: 40,
-      xPhase: 0, yPhase: 0,
-      brightnessScale: 1.0,
-    },
-    {
-      color: [59, 130, 246],  // blue
-      width: 240,
-      height: 120,
-      xFreq: 0.6, yFreq: 0.45,
-      xAmp: 120, yAmp: 45,
-      xPhase: 1.5, yPhase: 1.0,
-      brightnessScale: 0.9,
-      xUseSin: true,
-    },
-    {
-      color: [34, 211, 238],  // cyan
-      width: 180,
-      height: 90,
-      xFreq: 0.8, yFreq: 0.6,
-      xAmp: 80, yAmp: 35,
-      xPhase: 3.0, yPhase: 2.0,
-      brightnessScale: 0.85,
-    },
-    {
-      color: [99, 102, 241],  // indigo
-      width: 220,
-      height: 100,
-      xFreq: 0.55, yFreq: 0.7,
-      xAmp: 110, yAmp: 40,
-      xPhase: 4.5, yPhase: 3.5,
-      brightnessScale: 0.9,
-      xUseSin: true,
-    },
+    { color: '147, 51, 234',  xFreq: 0.7,  yFreq: 0.5,  xAmp: 25, yAmp: 12, xPhase: 0,   yPhase: 0,   size: 200, scale: 1.0 },
+    { color: '59, 130, 246',  xFreq: 0.6,  yFreq: 0.45, xAmp: 30, yAmp: 14, xPhase: 1.5, yPhase: 1.0, size: 240, scale: 0.9, useSin: true },
+    { color: '34, 211, 238',  xFreq: 0.8,  yFreq: 0.6,  xAmp: 20, yAmp: 10, xPhase: 3.0, yPhase: 2.0, size: 180, scale: 0.85 },
+    { color: '99, 102, 241',  xFreq: 0.55, yFreq: 0.7,  xAmp: 28, yAmp: 12, xPhase: 4.5, yPhase: 3.5, size: 220, scale: 0.9, useSin: true },
   ];
 
-  function render(ctx: CanvasRenderingContext2D, t: number) {
-    const w = ctx.canvas.width;
-    const h = ctx.canvas.height;
-    const dpr = window.devicePixelRatio || 1;
-    const cx = w / 2;
-    // Center blobs around the pill position (near bottom of window, not geometric center)
-    const cy = h - (60 * dpr);
-
-    ctx.clearRect(0, 0, w, h);
-
+  // Computed blob positions (reactive)
+  let blobStyles = $derived.by(() => {
     const speed = 0.4 + energy * 0.6;
     const brightness = 0.5 + energy * 0.4;
 
-    for (const blob of blobs) {
-      const blobBrightness = brightness * blob.brightnessScale;
-
-      // Lissajous motion
-      const xTrigFn = blob.xUseSin ? Math.sin : Math.cos;
-      const yTrigFn = blob.xUseSin ? Math.cos : Math.sin;
-
-      const x = cx + xTrigFn(t * blob.xFreq * speed + blob.xPhase) * blob.xAmp;
-      const y = cy + yTrigFn(t * blob.yFreq * speed + blob.yPhase) * blob.yAmp;
-
-      // Draw ellipse with radial gradient for soft edges
-      const rx = blob.width / 2;
-      const ry = blob.height / 2;
-      const maxR = Math.max(rx, ry);
-
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, maxR);
-      const [r, g, b] = blob.color;
-      gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${blobBrightness})`);
-      gradient.addColorStop(0.4, `rgba(${r}, ${g}, ${b}, ${blobBrightness * 0.6})`);
-      gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
-
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.scale(rx / maxR, ry / maxR);
-      ctx.translate(-x, -y);
-
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(x, y, maxR, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-  }
+    return blobs.map(b => {
+      const xFn = b.useSin ? Math.sin : Math.cos;
+      const yFn = b.useSin ? Math.cos : Math.sin;
+      const x = 50 + xFn(t * b.xFreq * speed + b.xPhase) * b.xAmp;
+      const y = 70 + yFn(t * b.yFreq * speed + b.yPhase) * b.yAmp;
+      const alpha = brightness * b.scale;
+      return `radial-gradient(ellipse ${b.size}px ${b.size * 0.5}px at ${x}% ${y}%, rgba(${b.color}, ${alpha.toFixed(2)}) 0%, rgba(${b.color}, 0) 70%)`;
+    });
+  });
 
   function loop(timestamp: number) {
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
     if (!startTime) startTime = timestamp;
-    const t = (timestamp - startTime) / 1000;
-
-    render(ctx, t);
-    animationId = requestAnimationFrame(loop);
-  }
-
-  function startAnimation() {
-    if (!canvas) {
-      console.log('[LavaLamp] no canvas element');
-      return;
-    }
-
-    // Set canvas size to match display
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    console.log(`[LavaLamp] canvas rect: ${rect.width}x${rect.height}, dpr: ${dpr}`);
-
-    if (rect.width === 0 || rect.height === 0) {
-      console.log('[LavaLamp] canvas has zero size, retrying in 100ms');
-      setTimeout(() => startAnimation(), 100);
-      return;
-    }
-
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.scale(dpr, dpr);
-      // Skip ctx.filter blur — use CSS filter on the canvas element instead
-      // (ctx.filter can silently swallow content on some WebKit builds)
-      console.log(`[LavaLamp] started: ${canvas.width}x${canvas.height}`);
-    }
-
-    startTime = 0;
-    animationId = requestAnimationFrame(loop);
-  }
-
-  function stopAnimation() {
-    if (animationId) {
-      cancelAnimationFrame(animationId);
-      animationId = 0;
-    }
+    t = (timestamp - startTime) / 1000;
+    animId = requestAnimationFrame(loop);
   }
 
   $effect(() => {
-    if (visible && canvas) {
-      startAnimation();
+    if (visible) {
+      startTime = 0;
+      animId = requestAnimationFrame(loop);
     } else {
-      stopAnimation();
+      if (animId) cancelAnimationFrame(animId);
+      animId = 0;
     }
-
     return () => {
-      stopAnimation();
+      if (animId) cancelAnimationFrame(animId);
     };
   });
 </script>
 
 <div
-  class="lava-lamp-wrapper"
-  style="opacity: {visible ? 1 : 0}; transition: opacity 800ms ease-in-out;"
->
-  <canvas bind:this={canvas}></canvas>
-</div>
+  class="lava-lamp"
+  style="
+    opacity: {visible ? 1 : 0};
+    background: {blobStyles.join(', ')};
+  "
+></div>
 
 <style>
-  .lava-lamp-wrapper {
+  .lava-lamp {
     position: absolute;
     inset: 0;
     pointer-events: none;
-    overflow: hidden;
-  }
-
-  .lava-lamp-wrapper canvas {
-    width: 100%;
-    height: 100%;
-    display: block;
-    filter: blur(30px);
+    transition: opacity 800ms ease-in-out;
+    filter: blur(40px);
   }
 </style>
