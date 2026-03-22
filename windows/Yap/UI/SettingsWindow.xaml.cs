@@ -10,6 +10,7 @@ using Yap.Models;
 using Yap.Transcription;
 using ComboBox = System.Windows.Controls.ComboBox;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using MessageBox = System.Windows.MessageBox;
 
 namespace Yap.UI
 {

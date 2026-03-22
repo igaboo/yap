@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using Yap.Core;
+using Application = System.Windows.Application;
 
 namespace Yap.Input
 {

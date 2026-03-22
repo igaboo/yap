@@ -8,6 +8,7 @@ using Yap.Models;
 using Yap.Onboarding;
 using Yap.Transcription;
 using Yap.UI;
+using Application = System.Windows.Application;
 
 namespace Yap.Core
 {
@@ -156,7 +157,7 @@ namespace Yap.Core
 
             if (!started)
             {
-                _overlayPanel?.ShowError("Hotkey failed — try running as Administrator");
+                _overlay?.ShowError("Hotkey failed — try running as Administrator");
             }
         }
 

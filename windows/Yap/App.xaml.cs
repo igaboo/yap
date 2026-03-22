@@ -4,6 +4,7 @@ using System.Windows;
 using Yap.Core;
 using Yap.UI;
 using Application = System.Windows.Application;
+using MessageBox = System.Windows.MessageBox;
 
 namespace Yap
 {

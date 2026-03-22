@@ -10,7 +10,7 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using Color = System.Windows.Media.Color;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
-using Rectangle = System.Drawing.Rectangle;
+using Rectangle = System.Windows.Shapes.Rectangle;
 using System.Runtime.InteropServices;
 using Yap.Core;
 using Yap.Onboarding;

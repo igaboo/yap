@@ -6,7 +6,9 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using Yap.Models;
 using Button = System.Windows.Controls.Button;
+using Clipboard = System.Windows.Clipboard;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using MessageBox = System.Windows.MessageBox;
 
 namespace Yap.UI
 {
