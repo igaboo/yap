@@ -44,26 +44,9 @@ namespace Yap.Audio
 
             IsPaused = false;
 
-            // Query the default recording device's native sample rate
-            int sampleRate = 16000; // fallback
-            try
-            {
-                var capabilities = WaveInEvent.GetCapabilities(0);
-                // WaveInEvent capabilities don't directly expose sample rate,
-                // so use a WaveInEvent with default format to query the device
-                using var probe = new WaveInEvent();
-                // The device's default format gives us the native sample rate
-                if (probe.WaveFormat.SampleRate > 0)
-                {
-                    sampleRate = probe.WaveFormat.SampleRate;
-                }
-                Logger.Log($"AudioRecorder: device native sample rate={sampleRate}Hz");
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"AudioRecorder: failed to query device format, using 16kHz fallback: {ex.Message}");
-                sampleRate = 16000;
-            }
+            // Use 44100Hz — universally supported by all modern microphones.
+            // WaveInEvent defaults to 8kHz (telephony) which many devices don't capture properly.
+            const int sampleRate = 44100;
 
             _waveIn = new WaveInEvent
             {
