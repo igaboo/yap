@@ -40,7 +40,7 @@
   // ── Provider Metadata ─────────────────────────────────────────────────
 
   const txProviders = [
-    { value: 'none', label: 'None (On-device)' },
+    { value: 'none', label: 'None' },
     { value: 'gemini', label: 'Gemini' },
     { value: 'openai', label: 'OpenAI' },
     { value: 'deepgram', label: 'Deepgram' },
@@ -527,7 +527,7 @@
         </div>
         {#if !hasTxProvider}
           <div class="section-footer">
-            Using built-in on-device speech recognition -- free, no API key needed.
+            Select a provider and enter your API key to enable transcription.
           </div>
         {/if}
       </div>
