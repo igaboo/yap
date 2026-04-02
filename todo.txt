@@ -33,14 +33,17 @@ FUTURE — Windows overlay sidecar
 ---------------------------------
 [ ] Research: native Windows overlay approaches
     - Win32 layered windows (WS_EX_LAYERED + WS_EX_TRANSPARENT) with per-pixel hit-testing
-    - DirectComposition + Direct2D for GPU-accelerated transparent overlay
-    - Rust windows-rs crate can do all of this natively
-    - WisprFlow uses Electron on Windows (same overlay limitations, no native sidecar)
-[ ] Build native Windows overlay sidecar (Rust + windows-rs or C++)
+    - DirectComposition + Direct2D for GPU-accelerated transparent overlay (best perf)
+    - Rust windows-rs crate can do all of this natively — no C++ needed
+    - WisprFlow uses Electron on Windows (same overlay limitations, NO native sidecar)
+    - Tauri's set_ignore_cursor_events is buggy on Windows 10 (tauri-apps/tauri#11461)
+[ ] Build native Windows overlay sidecar (Rust + windows-rs)
     - Same IPC protocol as macOS sidecar (stdin/stdout JSON)
-    - Win32 HWND with WS_EX_LAYERED | WS_EX_TOPMOST
-    - Per-pixel alpha for click-through on transparent areas
+    - Win32 HWND with WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_NOACTIVATE
+    - DirectComposition for GPU-composited per-pixel alpha (click-through on transparent)
     - WM_MOUSEMOVE / TrackMouseEvent for hover detection
+    - Direct2D or XAML Islands for pill rendering
+    - Could be same Rust binary as main app, just a separate window (no Swift equivalent)
 [ ] Remove WebView overlay dependency on Windows once native sidecar ships
 
 FUTURE — General
