@@ -62,6 +62,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
+      - name: Build Swift overlay sidecar (macOS)
+        if: matrix.platform == 'macos-latest'
+        working-directory: tauri-app/src-tauri/sidecar-overlay
+        run: bash build-sidecar.sh
+
       - name: Install frontend dependencies
         working-directory: tauri-app
         run: npm install
