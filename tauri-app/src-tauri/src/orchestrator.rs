@@ -383,6 +383,14 @@ impl Orchestrator {
         if !inner.enabled {
             return;
         }
+
+        // In hands-free mode, pressing the hotkey stops the recording
+        if inner.state == AppState::HandsFreeRecording || inner.state == AppState::HandsFreePaused {
+            drop(inner);
+            self.stop_hands_free_internal();
+            return;
+        }
+
         if inner.state != AppState::Idle {
             return;
         }
