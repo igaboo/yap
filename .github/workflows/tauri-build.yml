@@ -2,7 +2,7 @@ name: Tauri Build
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - "tauri-app/**"
       - "README.md"
@@ -12,7 +12,7 @@ on:
     tags:
       - "v*"
   pull_request:
-    branches: [master]
+    branches: [main]
     paths:
       - "tauri-app/**"
       - "README.md"
