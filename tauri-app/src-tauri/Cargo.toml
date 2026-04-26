@@ -1,5 +1,5 @@
 [package]
-name = "tauri-app"
+name = "yap"
 version = "1.0.0"
 description = "Yap - Cross-platform voice-to-text"
 authors = ["you"]

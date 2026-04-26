@@ -1,7 +1,7 @@
 {
-  "name": "tauri-app",
-  "version": "0.1.0",
-  "description": "",
+  "name": "yap",
+  "version": "1.0.0",
+  "description": "Cross-platform voice-to-text tray app",
   "type": "module",
   "scripts": {
     "dev": "vite dev",

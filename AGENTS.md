@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file gives Claude Code repository context for Yap.
+This file gives Codex and other coding agents repository context for Yap.
 
 ## Build & Run
 
@@ -12,7 +12,7 @@ npm run tauri -- dev
 npm run tauri -- build
 ```
 
-The app is now a Tauri 2 desktop application. The old root-level Swift package has been removed; `tauri-app/` is the canonical app.
+The canonical application lives in `tauri-app/`. The old root-level Swift package has been removed; Swift remains only as the macOS overlay sidecar under `tauri-app/src-tauri/sidecar-overlay/`.
 
 Runtime permissions:
 
@@ -62,9 +62,9 @@ Config is stored at `~/.config/yap/config.json`. Important fields include:
 
 Empty model strings fall back to provider defaults. Formatting falls back to the transcription API key when its own API key is blank.
 
-## Notes
+## Working Rules
 
 - Keep cross-platform behavior in the Rust orchestrator where possible.
 - Use platform-specific code only for OS integration: hotkeys, overlay behavior, paste, speech, bundling, and permissions.
 - The app and tray icons used by builds live under `tauri-app/src-tauri/icons/`.
-- Local Claude agent files in `.claude/` are intentionally ignored.
+- Local agent files in `.claude/` are intentionally ignored.

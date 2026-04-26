@@ -1,7 +1,23 @@
-# Tauri + SvelteKit + TypeScript
+# Yap Desktop App
 
-This template should help get you started developing with Tauri, SvelteKit and TypeScript in Vite.
+This directory contains the canonical Yap desktop app.
 
-## Recommended IDE Setup
+## Commands
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
+```bash
+npm install
+npm run dev
+npm run check
+npm run tauri -- dev
+npm run tauri -- build
+```
+
+## Structure
+
+- `src-tauri/src/` - Rust application code.
+- `src-tauri/sidecar-overlay/` - macOS Swift/AppKit overlay sidecar.
+- `src-tauri/icons/` - app, Windows, macOS, and tray icons.
+- `src-tauri/sounds/` - bundled feedback sounds.
+- `src/lib/settings/` - settings UI.
+- `src/lib/history/` - history UI.
+- `src/lib/overlay/` - overlay UI.

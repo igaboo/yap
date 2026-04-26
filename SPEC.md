@@ -2,9 +2,9 @@
 
 **Version**: 1.0
 **Status**: Accepted
-**Applies to**: macOS (Swift), Windows (C#/WPF)
+**Applies to**: macOS and Windows Tauri app
 
-This document is the single source of truth for feature parity between the macOS and Windows implementations of Yap. Both platforms must conform to every section below. Where platform-specific behavior diverges, it is called out explicitly.
+This document is the single source of truth for feature parity in the Tauri-based Yap app. Shared behavior should live in Rust/Svelte where possible; platform-specific behavior should be limited to OS integration such as hotkeys, overlays, paste simulation, speech permissions, and bundling.
 
 ---
 
@@ -127,8 +127,7 @@ If other modifiers are held simultaneously (Shift, Control, Command/Win, or the 
 
 ### Audio Engine
 
-- macOS: `AVAudioEngine`, tap on input node, buffer size 2048.
-- Windows: `NAudio` WaveIn or WASAPI capture.
+- macOS/Windows: Rust `cpal` capture with device-specific input stream configuration.
 
 ### Real-time Level Computation
 
@@ -530,7 +529,7 @@ If any match, discard the result entirely. This catches cases where the model ec
 
 | Property | macOS | Windows |
 |----------|-------|---------|
-| Type | NSPanel (borderless, nonactivatingPanel) | WPF Window (AllowsTransparency, no taskbar) |
+| Type | NSPanel sidecar (borderless, nonactivatingPanel) | Win32 layered window |
 | Level | Floating | Topmost |
 | Click-through | Yes (except pill region and buttons) | Yes (WS_EX_TRANSPARENT except hit regions) |
 | Background | Transparent | Transparent |

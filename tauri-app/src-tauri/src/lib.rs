@@ -181,6 +181,16 @@ fn get_pipeline_state(orch: tauri::State<'_, Arc<Orchestrator>>) -> orchestrator
     orch.state()
 }
 
+/// Show the settings window. Used by the fallback root route.
+#[tauri::command]
+fn show_settings(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("settings") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // App entry point
 // ---------------------------------------------------------------------------
@@ -234,6 +244,7 @@ pub fn run() {
             stop_hands_free,
             toggle_enabled,
             get_pipeline_state,
+            show_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

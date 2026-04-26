@@ -10,6 +10,8 @@ DONE (this session)
 [x] Deleted all legacy hover tracking code (event monitors, pill bounds, etc.)
 [x] WebView overlay destroyed on macOS at startup (clean build)
 [x] Sidecar binary bundled in Contents/MacOS/ via externalBin
+[x] Native Windows overlay path compiles with Win32 layered window support
+[x] Root-level legacy Swift app removed; Tauri app is canonical
 
 BEFORE RELEASE — macOS
 ----------------------
@@ -25,26 +27,9 @@ BEFORE RELEASE — macOS
 BEFORE RELEASE — Windows
 -------------------------
 [ ] Test basic pipeline: hotkey → record → transcribe → format → paste
-[ ] Test WebView overlay (recording, processing, error states)
-[ ] Hover/click-through will NOT work on Windows WebView — document as known limitation
+[ ] Test native Win32 overlay (recording, processing, error states)
+[ ] Test overlay click-through/hover behavior on a real Windows machine
 [ ] CI/CD: GitHub Actions Windows runner build test
-
-FUTURE — Windows overlay sidecar
----------------------------------
-[ ] Research: native Windows overlay approaches
-    - Win32 layered windows (WS_EX_LAYERED + WS_EX_TRANSPARENT) with per-pixel hit-testing
-    - DirectComposition + Direct2D for GPU-accelerated transparent overlay (best perf)
-    - Rust windows-rs crate can do all of this natively — no C++ needed
-    - WisprFlow uses Electron on Windows (same overlay limitations, NO native sidecar)
-    - Tauri's set_ignore_cursor_events is buggy on Windows 10 (tauri-apps/tauri#11461)
-[ ] Build native Windows overlay sidecar (Rust + windows-rs)
-    - Same IPC protocol as macOS sidecar (stdin/stdout JSON)
-    - Win32 HWND with WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_NOACTIVATE
-    - DirectComposition for GPU-composited per-pixel alpha (click-through on transparent)
-    - WM_MOUSEMOVE / TrackMouseEvent for hover detection
-    - Direct2D or XAML Islands for pill rendering
-    - Could be same Rust binary as main app, just a separate window (no Swift equivalent)
-[ ] Remove WebView overlay dependency on Windows once native sidecar ships
 
 FUTURE — General
 ----------------

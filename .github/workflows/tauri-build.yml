@@ -2,16 +2,22 @@ name: Tauri Build
 
 on:
   push:
-    branches: [master, feat/multi-platform]
+    branches: [master]
     paths:
       - "tauri-app/**"
+      - "README.md"
+      - "AGENTS.md"
+      - "CLAUDE.md"
       - ".github/workflows/tauri-build.yml"
     tags:
       - "v*"
   pull_request:
-    branches: [master, feat/multi-platform]
+    branches: [master]
     paths:
       - "tauri-app/**"
+      - "README.md"
+      - "AGENTS.md"
+      - "CLAUDE.md"
       - ".github/workflows/tauri-build.yml"
 
 jobs:
@@ -61,11 +67,6 @@ jobs:
           key: ${{ runner.os }}-node-${{ hashFiles('tauri-app/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
-
-      - name: Build Swift overlay sidecar (macOS)
-        if: matrix.platform == 'macos-latest'
-        working-directory: tauri-app/src-tauri/sidecar-overlay
-        run: bash build-sidecar.sh
 
       - name: Install frontend dependencies
         working-directory: tauri-app
