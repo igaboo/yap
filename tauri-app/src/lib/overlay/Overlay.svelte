@@ -3,7 +3,7 @@
    * Main overlay component — the floating glass pill with all visual states.
    *
    * States:
-   *   idle        — minimized pill (scale 0.5, offset-y 40px)
+   *   idle        — minimized pill
    *   recording   — expanded pill with audio-reactive waveform bars
    *   processing  — slightly contracted (scale 0.8) with shimmer sweep
    *   noSpeech    — flat bars + shake animation
@@ -20,6 +20,7 @@
   import './overlay.css';
   import WaveformBars from './WaveformBars.svelte';
   import LavaLamp from './LavaLamp.svelte';
+  import Prompt from './Prompt.svelte';
 
   interface OverlayData {
     mode: 'idle' | 'recording' | 'processing' | 'noSpeech' | 'error';
@@ -82,14 +83,17 @@
   let audioBounceFactor = $derived.by(() => {
     if (overlayData.mode !== 'recording' || overlayData.isPaused) return 1.0;
     const level = Math.min(overlayData.audioLevel, 1.0);
-    return 1.0 + Math.pow(level, 1.5) * 0.25;
+    return 1.0 + Math.pow(level, 1.5) * 0.12;
   });
 
   // Pill scale factor
   let pillScale = $derived.by(() => {
-    if (isExpanded) return 0.75;
-    return 0.65;
+    if (isExpanded) return 0.64;
+    return 0.58;
   });
+
+  // Vertical position for the full card/timer/pill stack.
+  let stackOffsetY = $derived(isExpanded ? 12 : 15);
 
   // Combined transform for the pill
   let pillTransform = $derived.by(() => {
@@ -97,8 +101,7 @@
     const pressScale = isPressed ? 0.85 : 1.0;
     const confirmScale = confirmPressed ? 0.85 : 1.0;
     const scale = pillScale * audioBounceFactor * pressScale * processingScale * confirmScale;
-    const offsetY = isExpanded ? 0 : 15;
-    return `scale(${scale}) translateY(${offsetY}px)`;
+    return `scale(${scale})`;
   });
 
   // Show the "Hold fn" prompt inside the pill for specific onboarding steps
@@ -107,10 +110,6 @@
     if (overlayData.mode !== 'idle' && overlayData.mode !== 'noSpeech') return false;
     return ['apiTip', 'formattingTip', 'welcome'].includes(overlayData.onboardingStep);
   });
-
-  let holdPromptText = $derived(
-    overlayData.onboardingStep === 'welcome' ? 'to finish' : 'to continue'
-  );
 
   // Whether the pill is in hold-to-confirm pressed state (scale-down feedback)
   let confirmPressed = $derived(overlayData.onboardingPressed);
@@ -127,7 +126,7 @@
 
     function shakeStep(ts: number) {
       const progress = Math.min((ts - startTs) / duration, 1);
-      shakeOffset = 10 * Math.sin(progress * Math.PI * 6) * (1 - progress);
+      shakeOffset = 4 * Math.sin(progress * Math.PI * 6) * (1 - progress);
       if (progress < 1) {
         shakeAnimFrame = requestAnimationFrame(shakeStep);
       } else {
@@ -229,16 +228,17 @@
     class="pill-wrapper"
     class:animate-slide-in={slideVisible === 'in'}
     class:animate-slide-out={slideVisible === 'out'}
+    style="--stack-y: {stackOffsetY}px;"
   >
     <!-- Onboarding card (above pill) -->
     {#if overlayData.onboardingText && overlayData.onboardingStep && (overlayData.mode === 'idle' || overlayData.mode === 'noSpeech')}
       {#key overlayData.onboardingStep}
-        <div
-          class="onboarding-card animate-card-enter"
-          class:nice-card={overlayData.onboardingStep === 'nice'}
-        >
-          {@html overlayData.onboardingText}
-        </div>
+        <Prompt
+          variant="card"
+          step={overlayData.onboardingStep}
+          text={overlayData.onboardingText}
+          hotkeyLabel={overlayData.hotkeyLabel}
+        />
       {/key}
     {/if}
 
@@ -284,11 +284,11 @@
       <!-- Pill Content -->
       {#if showHoldPrompt}
         <!-- Hold [key] prompt during certain onboarding steps -->
-        <div class="hold-prompt">
-          <span>Hold</span>
-          <span class="keycap">{overlayData.hotkeyLabel}</span>
-          <span>{holdPromptText}</span>
-        </div>
+        <Prompt
+          variant="inline-hold"
+          step={overlayData.onboardingStep}
+          hotkeyLabel={overlayData.hotkeyLabel}
+        />
       {:else if overlayData.mode === 'error'}
         <!-- Error state — show flat bars in pill, message is in the card above -->
         <WaveformBars

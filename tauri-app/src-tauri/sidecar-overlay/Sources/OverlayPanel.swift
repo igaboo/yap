@@ -40,12 +40,12 @@ class OverlayPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     init() {
-        let width: CGFloat = 1400
-        let height: CGFloat = 700
+        let width = OverlayLayout.panelWidth
+        let height = OverlayLayout.panelHeight
 
-        let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let screenFrame = NSScreen.main?.frame ?? OverlayLayout.fallbackScreenFrame
         let x = screenFrame.midX - width / 2
-        let y = screenFrame.minY + 330 - height
+        let y = screenFrame.minY + OverlayLayout.visiblePanelBottomInset - height
 
         super.init(
             contentRect: NSRect(x: x, y: y, width: width, height: height),
@@ -87,12 +87,12 @@ class OverlayPanel: NSPanel {
     }
 
     private var onScreenY: CGFloat {
-        let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        return screenFrame.minY + 330 - frame.height
+        let screenFrame = NSScreen.main?.frame ?? OverlayLayout.fallbackScreenFrame
+        return screenFrame.minY + OverlayLayout.visiblePanelBottomInset - frame.height
     }
 
     private var offScreenY: CGFloat {
-        let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let screenFrame = NSScreen.main?.frame ?? OverlayLayout.fallbackScreenFrame
         return screenFrame.minY - frame.height
     }
 
@@ -229,19 +229,19 @@ class OverlayPanel: NSPanel {
     private func updateButtonTargets() {
         guard let pause = pauseTarget, let stop = stopTarget else { return }
         let cx = frame.width / 2
-        let cy: CGFloat = 435
+        let cy = OverlayLayout.controlCenterY - OverlayLayout.expandedStackYOffset
 
         let scale: CGFloat
         if overlayState.mode == .recording && !overlayState.isPaused {
             let lvl = min(CGFloat(overlayState.audioLevel), 1.0)
-            scale = 1.0 + pow(lvl, 1.5) * 0.25
+            scale = OverlayLayout.controlScale * (1.0 + pow(lvl, 1.5) * OverlayLayout.audioBounceScale)
         } else {
-            scale = 1.0
+            scale = OverlayLayout.controlScale
         }
 
-        let targetRadius: CGFloat = 13 * scale + 4
-        let pauseCX = cx - 49 * scale
-        let stopCX  = cx + 49 * scale
+        let targetRadius = OverlayLayout.controlButtonRadius * scale + OverlayLayout.controlHitPadding
+        let pauseCX = cx - OverlayLayout.controlButtonSpacing * scale
+        let stopCX  = cx + OverlayLayout.controlButtonSpacing * scale
 
         pause.frame = NSRect(x: pauseCX - targetRadius, y: cy - targetRadius,
                              width: targetRadius * 2, height: targetRadius * 2)
@@ -257,9 +257,22 @@ class OverlayPanel: NSPanel {
             contentOverlay?.pillHitRegion = .zero
         default:
             if isExpanded {
-                contentOverlay?.pillHitRegion = NSRect(x: cx - 40, y: 415, width: 80, height: 40)
+                let width = OverlayLayout.activePillHitWidth
+                let y = OverlayLayout.activePillHitBaseY - OverlayLayout.expandedStackYOffset
+                contentOverlay?.pillHitRegion = NSRect(
+                    x: cx - width / 2,
+                    y: y,
+                    width: width,
+                    height: OverlayLayout.activePillHitHeight
+                )
             } else {
-                contentOverlay?.pillHitRegion = NSRect(x: cx - 40, y: 371, width: 80, height: 28)
+                let width = OverlayLayout.idlePillHitWidth
+                contentOverlay?.pillHitRegion = NSRect(
+                    x: cx - width / 2,
+                    y: OverlayLayout.idlePillHitY,
+                    width: width,
+                    height: OverlayLayout.idlePillHitHeight
+                )
             }
         }
     }
@@ -305,7 +318,7 @@ struct ShakeEffect: GeometryEffect {
         set { progress = newValue }
     }
     func effectValue(size: CGSize) -> ProjectionTransform {
-        let offset = 10 * sin(progress * .pi * 6) * (1 - progress)
+        let offset = 4 * sin(progress * .pi * 6) * (1 - progress)
         return ProjectionTransform(CGAffineTransform(translationX: offset, y: 0))
     }
 }
@@ -354,11 +367,14 @@ struct OverlayView: View {
     }
 
     private var showGradient: Bool { (isExpanded || state.isHovering) && state.gradientEnabled }
+    private var stackYOffset: CGFloat {
+        isExpanded ? OverlayLayout.expandedStackYOffset : OverlayLayout.minimizedStackYOffset
+    }
 
     private var audioBounceFactor: CGFloat {
         guard state.mode == .recording, !state.isPaused else { return 1.0 }
         let level = min(CGFloat(state.audioLevel), 1.0)
-        return 1.0 + pow(level, 1.5) * 0.25
+        return 1.0 + pow(level, 1.5) * OverlayLayout.audioBounceScale
     }
 
     var body: some View {
@@ -366,18 +382,20 @@ struct OverlayView: View {
             if showGradient {
                 LavaLampBackground(energy: gradientEnergy, celebrationPhase: celebrationPhase)
                     .allowsHitTesting(false)
+                    .offset(y: stackYOffset)
                     .transition(.opacity.combined(with: .offset(y: 60)))
                     .animation(.easeInOut(duration: 0.8), value: gradientEnergy)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: stackYOffset)
             }
 
             VStack(spacing: 0) {
                 Spacer()
 
                 VStack(spacing: 8) {
-                    // Onboarding card — uses HTML text from Tauri
+                    // Shared prompt card for onboarding and transient tips.
                     if state.onboardingStep != nil,
                        state.mode == .idle || state.mode == .noSpeech {
-                        OnboardingCardView(step: state.onboardingStep!, hotkeyLabel: state.hotkeyLabel)
+                        PromptCardView(step: state.onboardingStep!, hotkeyLabel: state.hotkeyLabel)
                             .id(state.onboardingStep)
                             .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .bottom)))
                     }
@@ -421,12 +439,11 @@ struct OverlayView: View {
                         }
                     }
                     .onTapGesture {
-                        guard state.mode != .recording, state.mode != .processing else { return }
+                        guard state.mode != .processing else { return }
                         state.onClickToRecord?()
                     }
                     .scaleEffect(pillScale * audioBounceFactor * (state.isPressed ? 0.85 : 1.0) * (state.mode == .processing ? 0.8 : 1.0))
                     .opacity(state.isPressed ? 0.7 : 1.0)
-                    .offset(y: isExpanded ? 0 : 40)
                     .modifier(ShakeEffect(progress: shakeProgress))
                     .animation(.spring(response: 0.25, dampingFraction: 0.45, blendDuration: 0.05), value: state.audioLevel)
                     .animation(.spring(response: 0.4, dampingFraction: 0.8), value: state.onboardingStep)
@@ -434,23 +451,26 @@ struct OverlayView: View {
                     .animation(.spring(response: 0.35, dampingFraction: 0.8), value: state.isHandsFree)
                     .animation(.spring(response: 0.3, dampingFraction: 0.8), value: state.isPaused)
                     .animation(.spring(response: 0.3, dampingFraction: 0.7), value: state.isHovering)
-                    .overlay(alignment: .bottom) {
+                    .overlay(alignment: .top) {
                         if state.isHovering && isMinimized {
                             Text("Click to start transcribing")
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundColor(.white)
                                 .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
                                 .fixedSize()
-                                .offset(y: -6)
-                                .transition(.opacity.combined(with: .offset(y: 4)))
+                                .allowsHitTesting(false)
+                                .offset(y: OverlayLayout.hoverTooltipYOffset)
+                                .transition(.opacity.combined(with: .offset(y: OverlayLayout.hoverTooltipTransitionYOffset)))
                         }
                     }
                 }
+                .offset(y: stackYOffset)
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: state.onboardingStep)
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: state.mode)
                 .animation(.spring(response: 0.45, dampingFraction: 0.7), value: state.mode == .recording && state.handsFreeElapsed >= 10)
+                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: stackYOffset)
 
-                Spacer().frame(height: 415)
+                Spacer().frame(height: OverlayLayout.bottomSpacerHeight)
             }
         }
         .onChange(of: state.shakeToken) { _ in
@@ -469,8 +489,8 @@ struct OverlayView: View {
     }
 
     private var pillScale: CGFloat {
-        if isExpanded { return 1.0 }
-        return state.isHovering ? 0.65 : 0.5
+        if isExpanded { return 0.82 }
+        return state.isHovering ? 0.58 : 0.5
     }
 
     private func formatElapsed(_ seconds: TimeInterval) -> String {
@@ -489,14 +509,8 @@ struct OverlayView: View {
     @ViewBuilder
     private var pillContent: some View {
         if showHoldPromptInPill {
-            HStack(spacing: 6) {
-                Text("Hold")
-                KeyCapView(label: state.hotkeyLabel)
-                Text(state.onboardingStep == .welcome ? "to finish" : "to continue")
-            }
-            .font(.system(size: 12, weight: .medium))
-            .foregroundColor(.white.opacity(0.8))
-            .transition(.opacity)
+            PromptInlineView(step: state.onboardingStep!, hotkeyLabel: state.hotkeyLabel)
+                .transition(.opacity)
         } else {
             switch state.mode {
             case .recording, .processing:
@@ -596,19 +610,20 @@ struct LavaLampBackground: View {
 
             ZStack {
                 Ellipse().fill(Color.purple.opacity(brightness))
-                    .frame(width: 300, height: 140)
-                    .offset(x: cos(t * 0.7 * speed) * 120 + ox0, y: sin(t * 0.5 * speed) * 35 + oy0)
+                    .frame(width: 220, height: 105)
+                    .offset(x: cos(t * 0.7 * speed) * 80 + ox0, y: sin(t * 0.5 * speed) * 26 + oy0)
                 Ellipse().fill(Color.blue.opacity(brightness * 0.9))
-                    .frame(width: 360, height: 160)
-                    .offset(x: sin(t * 0.6 * speed + 1.5) * 140 + ox1, y: cos(t * 0.45 * speed + 1.0) * 40 + oy1)
+                    .frame(width: 260, height: 120)
+                    .offset(x: sin(t * 0.6 * speed + 1.5) * 92 + ox1, y: cos(t * 0.45 * speed + 1.0) * 30 + oy1)
                 Ellipse().fill(Color.cyan.opacity(brightness * 0.85))
-                    .frame(width: 280, height: 120)
-                    .offset(x: cos(t * 0.8 * speed + 3.0) * 100 + ox2, y: sin(t * 0.6 * speed + 2.0) * 30 + oy2)
+                    .frame(width: 205, height: 94)
+                    .offset(x: cos(t * 0.8 * speed + 3.0) * 68 + ox2, y: sin(t * 0.6 * speed + 2.0) * 24 + oy2)
                 Ellipse().fill(Color.indigo.opacity(brightness * 0.9))
-                    .frame(width: 320, height: 130)
-                    .offset(x: sin(t * 0.55 * speed + 4.5) * 130 + ox3, y: cos(t * 0.7 * speed + 3.5) * 35 + oy3)
+                    .frame(width: 235, height: 102)
+                    .offset(x: sin(t * 0.55 * speed + 4.5) * 86 + ox3, y: cos(t * 0.7 * speed + 3.5) * 26 + oy3)
             }
-            .blur(radius: 55)
+            .blur(radius: 42)
+            .offset(y: 36)
         }
     }
 }
@@ -626,7 +641,22 @@ struct KeyCapView: View {
     }
 }
 
-struct OnboardingCardView: View {
+struct PromptInlineView: View {
+    let step: OnboardingStep
+    var hotkeyLabel: String = "fn"
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("Hold")
+            KeyCapView(label: hotkeyLabel)
+            Text(step == .welcome ? "to finish" : "to continue")
+        }
+        .font(.system(size: 12, weight: .medium))
+        .foregroundColor(.white.opacity(0.8))
+    }
+}
+
+struct PromptCardView: View {
     let step: OnboardingStep
     var hotkeyLabel: String = "fn"
 
@@ -660,7 +690,7 @@ struct OnboardingCardView: View {
         case .tryIt:
             HStack(spacing: 6) { Text("Hold"); KeyCapView(label: hotkeyLabel); Text("and speak — Yap transcribes it") }
         case .nice:
-            Text(OnboardingCardView.niceMessages.randomElement()!)
+            Text(PromptCardView.niceMessages.randomElement()!)
         case .doubleTapTip:
             HStack(spacing: 6) { Text("Double-tap"); KeyCapView(label: hotkeyLabel); Text("for hands-free transcription") }
         case .clickTip:
@@ -672,7 +702,7 @@ struct OnboardingCardView: View {
         case .welcome:
             Text("You're all set — enjoy! 🎉")
         case .speakTip:
-            HStack(spacing: 6) { Text("Didn't catch that — speak up while holding"); KeyCapView(label: hotkeyLabel) }
+            Text("Try speaking up")
         case .holdTip:
             HStack(spacing: 6) { Text("Hold"); KeyCapView(label: hotkeyLabel); Text("— don't just tap it") }
         }

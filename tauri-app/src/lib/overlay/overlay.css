@@ -83,6 +83,9 @@
   align-items: center;
   gap: 8px;
   pointer-events: none;
+  transform: translateY(var(--stack-y, 0px));
+  transition: transform 350ms var(--transition-spring);
+  will-change: transform;
 }
 
 .pill {
@@ -315,11 +318,11 @@
 /* Slide in from bottom */
 @keyframes slideIn {
   from {
-    transform: translateY(30px);
+    transform: translateY(calc(var(--stack-y, 0px) + 30px));
     opacity: 0;
   }
   to {
-    transform: translateY(0);
+    transform: translateY(var(--stack-y, 0px));
     opacity: 1;
   }
 }
@@ -327,11 +330,11 @@
 /* Slide out to bottom */
 @keyframes slideOut {
   from {
-    transform: translateY(0);
+    transform: translateY(var(--stack-y, 0px));
     opacity: 1;
   }
   to {
-    transform: translateY(30px);
+    transform: translateY(calc(var(--stack-y, 0px) + 30px));
     opacity: 0;
   }
 }

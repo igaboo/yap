@@ -270,10 +270,10 @@ impl AnimState {
         }
 
         // -- Pill scale --
-        let base_scale = if is_expanded { 1.0 } else if state.hovering { 0.65 } else { 0.5 };
+        let base_scale = if is_expanded { 0.92 } else if state.hovering { 0.6 } else { 0.5 };
         let audio_bounce = if state.mode == "recording" && !state.paused {
             let lvl = state.level.min(1.0);
-            1.0 + lvl.powf(1.5) * 0.25
+            1.0 + lvl.powf(1.5) * 0.12
         } else {
             1.0
         };
@@ -667,13 +667,13 @@ unsafe extern "system" fn wnd_proc(
                 let mouse_x = (lparam.0 & 0xFFFF) as i16 as f32;
                 let mouse_y = ((lparam.0 >> 16) & 0xFFFF) as i16 as f32;
                 let cx = CANVAS_W as f32 / 2.0;
-                let pill_y = CANVAS_H as f32 - 60.0; // pill center Y
+                let pill_y = CANVAS_H as f32 - 45.0; // pill center Y
 
                 if state.hands_free && state.mode == "recording" {
                     // Check pause/stop button hits
                     let audio_bounce = {
                         let lvl = state.level.min(1.0);
-                        1.0 + lvl.powf(1.5) * 0.25
+                        1.0 + lvl.powf(1.5) * 0.12
                     };
                     let pause_cx = cx - 49.0 * audio_bounce;
                     let stop_cx = cx + 49.0 * audio_bounce;
@@ -730,7 +730,7 @@ fn render_frame(hwnd: HWND, anim: &mut AnimState, font: &Option<FontRenderer>) {
 
     let cx = w as f32 / 2.0;
     // Pill center Y with slide offset
-    let pill_cy = h as f32 - 60.0 + anim.slide_y.val();
+    let pill_cy = h as f32 - 45.0 + anim.slide_y.val();
 
     // -- Lava lamp gradient --
     if anim.gradient_energy.val() > 0.01 {
@@ -783,7 +783,7 @@ fn render_frame(hwnd: HWND, anim: &mut AnimState, font: &Option<FontRenderer>) {
     // Shake offset for noSpeech
     let shake_offset = if anim.shake_active {
         let p = anim.shake_progress;
-        10.0 * (p * std::f32::consts::PI * 6.0).sin() * (1.0 - p)
+        4.0 * (p * std::f32::consts::PI * 6.0).sin() * (1.0 - p)
     } else {
         0.0
     };
@@ -926,27 +926,27 @@ fn render_gradient(pixmap: &mut tiny_skia::Pixmap, anim: &AnimState, cx: f32, cy
 
     let blobs = [
         Blob { // Purple
-            x: cx + (t * 0.7 * speed).cos() as f32 * 120.0 + ox0,
-            y: cy + (t * 0.5 * speed).sin() as f32 * 35.0 + oy0,
-            rx: 150.0, ry: 70.0,
+            x: cx + (t * 0.7 * speed).cos() as f32 * 80.0 + ox0,
+            y: cy + 18.0 + (t * 0.5 * speed).sin() as f32 * 26.0 + oy0,
+            rx: 110.0, ry: 52.0,
             r: 0.5, g: 0.0, b: 0.5, a: brightness,
         },
         Blob { // Blue
-            x: cx + (t * 0.6 * speed + 1.5).sin() as f32 * 140.0 + ox1,
-            y: cy + (t * 0.45 * speed + 1.0).cos() as f32 * 40.0 + oy1,
-            rx: 180.0, ry: 80.0,
+            x: cx + (t * 0.6 * speed + 1.5).sin() as f32 * 92.0 + ox1,
+            y: cy + 20.0 + (t * 0.45 * speed + 1.0).cos() as f32 * 30.0 + oy1,
+            rx: 130.0, ry: 60.0,
             r: 0.0, g: 0.0, b: 0.8, a: brightness * 0.9,
         },
         Blob { // Cyan
-            x: cx + (t * 0.8 * speed + 3.0).cos() as f32 * 100.0 + ox2,
-            y: cy + (t * 0.6 * speed + 2.0).sin() as f32 * 30.0 + oy2,
-            rx: 140.0, ry: 60.0,
+            x: cx + (t * 0.8 * speed + 3.0).cos() as f32 * 68.0 + ox2,
+            y: cy + 22.0 + (t * 0.6 * speed + 2.0).sin() as f32 * 24.0 + oy2,
+            rx: 102.0, ry: 47.0,
             r: 0.0, g: 0.6, b: 0.8, a: brightness * 0.85,
         },
         Blob { // Indigo
-            x: cx + (t * 0.55 * speed + 4.5).sin() as f32 * 130.0 + ox3,
-            y: cy + (t * 0.7 * speed + 3.5).cos() as f32 * 35.0 + oy3,
-            rx: 160.0, ry: 65.0,
+            x: cx + (t * 0.55 * speed + 4.5).sin() as f32 * 86.0 + ox3,
+            y: cy + 19.0 + (t * 0.7 * speed + 3.5).cos() as f32 * 26.0 + oy3,
+            rx: 118.0, ry: 51.0,
             r: 0.2, g: 0.0, b: 0.6, a: brightness * 0.9,
         },
     ];
@@ -1047,7 +1047,7 @@ fn render_hands_free_content(
 ) {
     let audio_bounce = if state.mode == "recording" && !state.paused {
         let lvl = state.level.min(1.0);
-        1.0 + lvl.powf(1.5) * 0.25
+        1.0 + lvl.powf(1.5) * 0.12
     } else {
         1.0
     };
@@ -1298,7 +1298,7 @@ fn onboarding_card_text(step: &OnboardingStep, hotkey_label: &str) -> String {
         OnboardingStep::ApiTip => "Add an API key in the menu bar for better transcription".to_string(),
         OnboardingStep::FormattingTip => "Enable formatting in Settings to clean up grammar automatically".to_string(),
         OnboardingStep::Welcome => "You're all set \u{2014} enjoy!".to_string(),
-        OnboardingStep::SpeakTip => format!("Didn't catch that \u{2014} speak up while holding {}", hotkey_label),
+        OnboardingStep::SpeakTip => "Try speaking up".to_string(),
         OnboardingStep::HoldTip => format!("Hold {} \u{2014} don't just tap it", hotkey_label),
     }
 }

@@ -101,6 +101,17 @@ impl OnboardingStep {
             Self::HoldTip => "holdTip",
         }
     }
+
+    fn is_transient_tip(&self) -> bool {
+        matches!(self, Self::SpeakTip | Self::HoldTip)
+    }
+
+    fn overlay_mode(&self) -> &'static str {
+        match self {
+            Self::SpeakTip | Self::HoldTip => "noSpeech",
+            _ => "idle",
+        }
+    }
 }
 
 /// The next step to advance to after a `nice` celebration.
@@ -151,10 +162,7 @@ fn onboarding_text(step: &OnboardingStep, hotkey_label: &str) -> String {
                 .to_string()
         }
         OnboardingStep::Welcome => "You're all set — enjoy! \u{1f389}".to_string(),
-        OnboardingStep::SpeakTip => format!(
-            "Didn't catch that — speak up while holding <span class=\"keycap\">{}</span>",
-            hotkey_label
-        ),
+        OnboardingStep::SpeakTip => "Try speaking up".to_string(),
         OnboardingStep::HoldTip => format!(
             "Hold <span class=\"keycap\">{}</span> — don't just tap it",
             hotkey_label
@@ -198,6 +206,46 @@ struct OrchestratorInner {
 }
 
 impl OrchestratorInner {
+    /// Emit an overlay display state to every renderer without changing the
+    /// app's internal pipeline state. Used for prompt-only states like
+    /// noSpeech, which are visual states rather than AppState variants.
+    fn emit_overlay_state(
+        &self,
+        state_str: &str,
+        hands_free: Option<bool>,
+        paused: Option<bool>,
+        elapsed: Option<f64>,
+    ) {
+        let _ = self.app.emit("state:change", StateChangePayload {
+            state: state_str.to_string(),
+            hands_free,
+            paused,
+            elapsed,
+        });
+
+        #[cfg(target_os = "macos")]
+        crate::sidecar::send(&crate::sidecar::OutMessage::State {
+            state: state_str.to_string(),
+            hands_free: hands_free.unwrap_or(false),
+            paused: paused.unwrap_or(false),
+            elapsed: elapsed.unwrap_or(0.0),
+        });
+
+        #[cfg(target_os = "windows")]
+        {
+            let s = state_str.to_string();
+            let hf = hands_free.unwrap_or(false);
+            let p = paused.unwrap_or(false);
+            let el = elapsed.unwrap_or(0.0);
+            crate::win_overlay::update_state(|st| {
+                st.mode = s;
+                st.hands_free = hf;
+                st.paused = p;
+                st.elapsed = el;
+            });
+        }
+    }
+
     /// Emit a state change event to the frontend and update the tray icon.
     fn emit_state(&self) {
         // Map internal state to simplified frontend state string
@@ -232,37 +280,8 @@ impl OrchestratorInner {
             _ => (None, None, None),
         };
 
-        let _ = self.app.emit("state:change", StateChangePayload {
-            state: state_str.to_string(),
-            hands_free,
-            paused,
-            elapsed,
-        });
+        self.emit_overlay_state(state_str, hands_free, paused, elapsed);
         tray::update_icon(&self.app, state_str);
-
-        // Send to native overlay sidecar on macOS
-        #[cfg(target_os = "macos")]
-        crate::sidecar::send(&crate::sidecar::OutMessage::State {
-            state: state_str.to_string(),
-            hands_free: hands_free.unwrap_or(false),
-            paused: paused.unwrap_or(false),
-            elapsed: elapsed.unwrap_or(0.0),
-        });
-
-        // Send to native Win32 overlay on Windows
-        #[cfg(target_os = "windows")]
-        {
-            let s = state_str.to_string();
-            let hf = hands_free.unwrap_or(false);
-            let p = paused.unwrap_or(false);
-            let el = elapsed.unwrap_or(0.0);
-            crate::win_overlay::update_state(|st| {
-                st.mode = s;
-                st.hands_free = hf;
-                st.paused = p;
-                st.elapsed = el;
-            });
-        }
     }
 
     /// Emit an error event to the frontend.
@@ -885,22 +904,9 @@ impl Orchestrator {
         inner.state = AppState::Idle;
         inner.onboarding_step = Some(tip.clone());
         inner.emit_state();
-        // Emit noSpeech mode first so the frontend shows the shake + flat bars
-        let _ = inner.app.emit("state:change", StateChangePayload {
-            state: "noSpeech".to_string(),
-            hands_free: None,
-            paused: None,
-            elapsed: None,
-        });
-        #[cfg(target_os = "macos")]
-        crate::sidecar::send(&crate::sidecar::OutMessage::State {
-            state: "noSpeech".to_string(),
-            hands_free: false,
-            paused: false,
-            elapsed: 0.0,
-        });
-        #[cfg(target_os = "windows")]
-        crate::win_overlay::update_state(|st| st.mode = "noSpeech".into());
+        if tip.overlay_mode() != "idle" {
+            inner.emit_overlay_state(tip.overlay_mode(), None, None, None);
+        }
         inner.emit_onboarding();
 
         let app = inner.app.clone();
@@ -919,13 +925,7 @@ impl Orchestrator {
                 if onboarding_complete {
                     // Post-onboarding: just clear
                     inner.onboarding_step = None;
-                    // Return to idle
-                    let _ = inner.app.emit("state:change", StateChangePayload {
-                        state: "idle".to_string(),
-                        hands_free: None,
-                        paused: None,
-                        elapsed: None,
-                    });
+                    inner.emit_state();
                     inner.emit_onboarding();
                 } else {
                     // During onboarding: restore to the pre-tip step
@@ -934,14 +934,8 @@ impl Orchestrator {
                         Some(OnboardingStep::DoubleTapTip) => OnboardingStep::DoubleTapTip,
                         _ => OnboardingStep::TryIt,
                     };
-                    // Brief delay, then restore
-                    let _ = inner.app.emit("state:change", StateChangePayload {
-                        state: "idle".to_string(),
-                        hands_free: None,
-                        paused: None,
-                        elapsed: None,
-                    });
                     inner.onboarding_step = Some(restore_to);
+                    inner.emit_state();
                     inner.emit_onboarding();
                 }
             }
@@ -951,10 +945,10 @@ impl Orchestrator {
     /// Dismiss any currently-showing transient tip and restore the previous step.
     fn dismiss_transient_tip(&self) {
         let mut inner = self.inner.lock().unwrap();
-        let is_tip = matches!(
-            inner.onboarding_step,
-            Some(OnboardingStep::SpeakTip) | Some(OnboardingStep::HoldTip)
-        );
+        let is_tip = inner
+            .onboarding_step
+            .as_ref()
+            .is_some_and(OnboardingStep::is_transient_tip);
         if !is_tip {
             return;
         }
@@ -965,6 +959,7 @@ impl Orchestrator {
             inner.onboarding_step = Some(restore);
         }
         inner.pre_tip_step = None;
+        inner.emit_state();
         inner.emit_onboarding();
     }
 
@@ -1062,13 +1057,9 @@ impl Orchestrator {
 
         play_sound(&self.app_handle(), "Pop");
 
-        // Silence check — show speakTip instead of generic error
+        // Silence check -- use the existing no-speech card above the pill.
         if peak < 0.15 {
             log::info(&format!("Silence detected (peak {:.3}) -- skipping", peak));
-            {
-                let mut inner = self.inner.lock().unwrap();
-                inner.state = AppState::Idle;
-            }
             self.show_tip(OnboardingStep::SpeakTip);
             return;
         }
@@ -1107,6 +1098,13 @@ impl Orchestrator {
             let result = process_audio_pipeline(&wav_path, &cfg).await;
             match result {
                 Ok(text) => {
+                    if text.is_empty() {
+                        log::info("Pipeline completed without transcription text");
+                        play_sound(&orch.app_handle(), "Pop");
+                        orch.show_tip(OnboardingStep::SpeakTip);
+                        return;
+                    }
+
                     if !text.is_empty() {
                         // Add to history
                         let tx_provider = format!("{:?}", cfg.tx_provider).to_lowercase();
@@ -1145,15 +1143,15 @@ impl Orchestrator {
                     }
 
                     // Trigger onboarding celebration + advancement if applicable
-                    if !text.is_empty() {
-                        orch.on_successful_paste_onboarding();
-                    } else {
-                        orch.restore_onboarding_if_needed();
-                    }
+                    orch.on_successful_paste_onboarding();
                 }
                 Err(e) => {
                     log::info(&format!("Pipeline error: {e}"));
                     play_sound(&orch.app_handle(), "Pop");
+                    if is_no_speech_error(&e) {
+                        orch.show_tip(OnboardingStep::SpeakTip);
+                        return;
+                    }
                     // Set internal state to idle but show error to frontend.
                     // Frontend auto-dismisses the error back to idle after 2s.
                     let mut inner = orch.inner.lock().unwrap();
@@ -1306,6 +1304,11 @@ fn classify_error(error: &str) -> String {
     } else {
         "Something went wrong".to_string()
     }
+}
+
+fn is_no_speech_error(error: &str) -> bool {
+    let lower = error.to_lowercase();
+    lower.contains("no speech") || lower.contains("no transcription")
 }
 
 // ---------------------------------------------------------------------------
