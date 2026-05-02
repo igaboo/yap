@@ -1,10 +1,11 @@
 // This module is a public API; many items are not yet wired into commands.
 #![allow(dead_code)]
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{mpsc, Mutex};
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
+static LISTENER_EPOCH: AtomicU64 = AtomicU64::new(0);
 
 /// Callback type for hotkey events.
 type HotkeyCallback = Box<dyn Fn() + Send + 'static>;
@@ -36,6 +37,76 @@ unsafe impl Send for HotkeyCallbacks {}
 struct CaptureCallbacks {
     on_preview: CaptureCallback,
     on_capture: CaptureCallback,
+}
+
+enum RuntimeEvent {
+    KeyDown,
+    KeyUp,
+    DoubleTap,
+    CapturePreview(String),
+    CaptureFinish(CaptureCallback, String),
+}
+
+static DISPATCHER: once_cell::sync::Lazy<mpsc::Sender<RuntimeEvent>> =
+    once_cell::sync::Lazy::new(|| {
+        let (tx, rx) = mpsc::channel::<RuntimeEvent>();
+        std::thread::Builder::new()
+            .name("yap-hotkey-dispatch".into())
+            .spawn(move || {
+                while let Ok(event) = rx.recv() {
+                    match event {
+                        RuntimeEvent::KeyDown => {
+                            if let Ok(cb) = CALLBACKS.lock() {
+                                if let Some(ref f) = cb.on_key_down {
+                                    f();
+                                }
+                            }
+                        }
+                        RuntimeEvent::KeyUp => {
+                            if let Ok(cb) = CALLBACKS.lock() {
+                                if let Some(ref f) = cb.on_key_up {
+                                    f();
+                                }
+                            }
+                        }
+                        RuntimeEvent::DoubleTap => {
+                            if let Ok(cb) = CALLBACKS.lock() {
+                                if let Some(ref f) = cb.on_double_tap {
+                                    f();
+                                }
+                            }
+                        }
+                        RuntimeEvent::CapturePreview(shortcut) => {
+                            if let Ok(capture) = CAPTURE_CALLBACKS.lock() {
+                                if let Some(callbacks) = capture.as_ref() {
+                                    (callbacks.on_preview)(shortcut);
+                                }
+                            }
+                        }
+                        RuntimeEvent::CaptureFinish(callback, shortcut) => {
+                            callback(shortcut);
+                        }
+                    }
+                }
+            })
+            .expect("failed to spawn hotkey dispatch thread");
+        tx
+    });
+
+fn dispatch(event: RuntimeEvent) {
+    let _ = DISPATCHER.send(event);
+}
+
+fn begin_listener_generation() -> u64 {
+    LISTENER_EPOCH.fetch_add(1, Ordering::SeqCst) + 1
+}
+
+fn cancel_listener_generation() {
+    LISTENER_EPOCH.fetch_add(1, Ordering::SeqCst);
+}
+
+fn listener_generation_matches(generation: u64) -> bool {
+    RUNNING.load(Ordering::SeqCst) && LISTENER_EPOCH.load(Ordering::SeqCst) == generation
 }
 
 /// Modifier keys supported in configurable shortcuts.
@@ -188,7 +259,7 @@ fn normalize_key(value: &str) -> Option<String> {
             && value[1..]
                 .parse::<u8>()
                 .ok()
-                .is_some_and(|n| (1..=20).contains(&n)) =>
+                .is_some_and(|n| (1..=24).contains(&n)) =>
         {
             value
         }
@@ -290,11 +361,7 @@ fn is_capturing() -> bool {
 }
 
 fn preview_capture(shortcut: String) {
-    if let Ok(capture) = CAPTURE_CALLBACKS.lock() {
-        if let Some(callbacks) = capture.as_ref() {
-            (callbacks.on_preview)(shortcut);
-        }
-    }
+    dispatch(RuntimeEvent::CapturePreview(shortcut));
 }
 
 fn finish_capture(shortcut: String) {
@@ -307,7 +374,7 @@ fn finish_capture(shortcut: String) {
     platform::reset_capture_state();
 
     if let Some(callback) = callback {
-        callback(shortcut);
+        dispatch(RuntimeEvent::CaptureFinish(callback, shortcut));
     }
 }
 
@@ -460,13 +527,23 @@ mod platform {
             return; // already running
         }
 
+        let trigger_keycodes = spec
+            .triggers
+            .iter()
+            .filter_map(|trigger| keycode_for_trigger(trigger))
+            .collect::<Vec<_>>();
+        if trigger_keycodes.len() != spec.triggers.len() {
+            eprintln!(
+                "[yap] HOTKEY FAILED: unsupported macOS shortcut {}",
+                spec.label()
+            );
+            RUNNING.store(false, Ordering::SeqCst);
+            return;
+        }
+
         REQUIRED_MODIFIER_FLAGS.store(modifier_flags(&spec), Ordering::SeqCst);
         if let Ok(mut triggers) = TRIGGER_KEYCODES.lock() {
-            *triggers = spec
-                .triggers
-                .iter()
-                .filter_map(|trigger| keycode_for_trigger(trigger))
-                .collect();
+            *triggers = trigger_keycodes;
         }
         if let Ok(mut pressed) = PRESSED_TRIGGER_KEYCODES.lock() {
             pressed.clear();
@@ -475,6 +552,7 @@ mod platform {
         LAST_KEY_UP.store(0, Ordering::SeqCst);
         KEY_DOWN_AT.store(0, Ordering::SeqCst);
         CURRENT_PRESS_IS_DOUBLE_TAP.store(false, Ordering::SeqCst);
+        let generation = begin_listener_generation();
 
         // Spawn a dedicated thread with its own CFRunLoop
         std::thread::Builder::new()
@@ -527,7 +605,7 @@ mod platform {
                     // Run the loop until stopped.
                     // MUST use kCFRunLoopDefaultMode here (not CommonModes — that's
                     // only valid for AddSource, not RunInMode).
-                    while RUNNING.load(Ordering::SeqCst) {
+                    while listener_generation_matches(generation) {
                         CFRunLoopRunInMode(
                             kCFRunLoopDefaultMode,
                             0.25, // check every 250ms if we should stop
@@ -805,15 +883,9 @@ mod platform {
         if elapsed_secs < DOUBLE_TAP_WINDOW {
             LAST_KEY_UP.store(0, Ordering::SeqCst);
             CURRENT_PRESS_IS_DOUBLE_TAP.store(true, Ordering::SeqCst);
-            if let Ok(cb) = CALLBACKS.lock() {
-                if let Some(ref f) = cb.on_double_tap {
-                    f();
-                }
-            }
-        } else if let Ok(cb) = CALLBACKS.lock() {
-            if let Some(ref f) = cb.on_key_down {
-                f();
-            }
+            dispatch(RuntimeEvent::DoubleTap);
+        } else {
+            dispatch(RuntimeEvent::KeyDown);
         }
     }
 
@@ -834,11 +906,7 @@ mod platform {
             LAST_KEY_UP.store(0, Ordering::SeqCst);
         }
 
-        if let Ok(cb) = CALLBACKS.lock() {
-            if let Some(ref f) = cb.on_key_up {
-                f();
-            }
-        }
+        dispatch(RuntimeEvent::KeyUp);
     }
 
     fn modifiers_match(flags: u64, required: u64) -> bool {
@@ -976,6 +1044,7 @@ mod platform {
 
     /// Remove the event tap and clean up.
     pub fn stop() {
+        cancel_listener_generation();
         if !RUNNING.swap(false, Ordering::SeqCst) {
             return; // not running
         }
@@ -1154,17 +1223,35 @@ mod platform {
     const MOD_CONTROL: u64 = 1 << 1;
     const MOD_OPTION: u64 = 1 << 2;
     const MOD_SHIFT: u64 = 1 << 3;
+    const WINDOWS_FN_VK: u16 = 0x87; // VK_F24; common Windows stand-in for Fn/Globe.
+
     /// Install a low-level keyboard hook (WH_KEYBOARD_LL).
     pub fn start(spec: HotkeySpec) {
         if RUNNING.swap(true, Ordering::SeqCst) {
             return;
         }
 
-        let target_vks = spec
+        let mut target_vks = spec
             .triggers
             .iter()
             .filter_map(|trigger| vk_for_trigger(trigger))
             .collect::<Vec<_>>();
+        if target_vks.len() != spec.triggers.len() {
+            eprintln!(
+                "[yap] HOTKEY FAILED: unsupported Windows shortcut {}",
+                spec.label()
+            );
+            RUNNING.store(false, Ordering::SeqCst);
+            return;
+        }
+
+        // Windows does not expose laptop Fn keys consistently. Keyboards that
+        // do expose a user-space Fn/Globe-style key commonly report VK_F24.
+        // Treat configured `fn` as that physical target, not as a zero-bit
+        // modifier, so `fn` and `fn+key` can produce real down/up events.
+        if spec.modifiers.contains(&HotkeyModifier::Fn) && !target_vks.contains(&WINDOWS_FN_VK) {
+            target_vks.insert(0, WINDOWS_FN_VK);
+        }
 
         if let Ok(mut targets) = TARGET_VKS.lock() {
             *targets = target_vks;
@@ -1178,6 +1265,7 @@ mod platform {
         LAST_KEY_UP.store(0, Ordering::SeqCst);
         KEY_DOWN_AT.store(0, Ordering::SeqCst);
         CURRENT_PRESS_IS_DOUBLE_TAP.store(false, Ordering::SeqCst);
+        let generation = begin_listener_generation();
 
         std::thread::Builder::new()
             .name("yap-hotkey".into())
@@ -1202,7 +1290,7 @@ mod platform {
 
                     // Message pump
                     let mut msg = MSG::default();
-                    while RUNNING.load(Ordering::SeqCst) {
+                    while listener_generation_matches(generation) {
                         let ret = GetMessageW(&mut msg, None, 0, 0);
                         if ret.0 <= 0 {
                             break;
@@ -1451,15 +1539,9 @@ mod platform {
         if elapsed_secs < DOUBLE_TAP_WINDOW {
             LAST_KEY_UP.store(0, Ordering::SeqCst);
             CURRENT_PRESS_IS_DOUBLE_TAP.store(true, Ordering::SeqCst);
-            if let Ok(cb) = CALLBACKS.lock() {
-                if let Some(ref f) = cb.on_double_tap {
-                    f();
-                }
-            }
-        } else if let Ok(cb) = CALLBACKS.lock() {
-            if let Some(ref f) = cb.on_key_down {
-                f();
-            }
+            dispatch(RuntimeEvent::DoubleTap);
+        } else {
+            dispatch(RuntimeEvent::KeyDown);
         }
     }
 
@@ -1480,11 +1562,7 @@ mod platform {
             LAST_KEY_UP.store(0, Ordering::SeqCst);
         }
 
-        if let Ok(cb) = CALLBACKS.lock() {
-            if let Some(ref f) = cb.on_key_up {
-                f();
-            }
-        }
+        dispatch(RuntimeEvent::KeyUp);
     }
 
     fn modifiers_match() -> bool {
@@ -1604,7 +1682,7 @@ mod platform {
             "'" => 0xDE,
             _ if trigger.starts_with('f') => {
                 let n = trigger[1..].parse::<u16>().ok()?;
-                if (1..=20).contains(&n) {
+                if (1..=24).contains(&n) {
                     0x70 + n - 1
                 } else {
                     return None;
@@ -1618,6 +1696,7 @@ mod platform {
 
     /// Remove the keyboard hook.
     pub fn stop() {
+        cancel_listener_generation();
         if !RUNNING.swap(false, Ordering::SeqCst) {
             return;
         }
@@ -1730,6 +1809,10 @@ mod platform {
             0x81 => "f18",
             0x82 => "f19",
             0x83 => "f20",
+            0x84 => "f21",
+            0x85 => "f22",
+            0x86 => "f23",
+            WINDOWS_FN_VK => "fn",
             _ => return Some(format!("vk:{vk}")),
         };
 
