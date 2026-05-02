@@ -35,13 +35,19 @@ use crate::orchestrator;
 // ---------------------------------------------------------------------------
 
 /// Canvas large enough for gradient halo + onboarding card + pill.
-const CANVAS_W: i32 = 660;
-const CANVAS_H: i32 = 400;
+///
+/// The visible pill stays anchored to the bottom of this window. Extra canvas
+/// room prevents the soft Windows-native gradient from being cut off at the
+/// layered-window bounds.
+const CANVAS_W: i32 = 1040;
+const CANVAS_H: i32 = 520;
 
 const WM_YAP_UPDATE: u32 = WM_USER + 1;
 
 const SLIDE_OFFSET_Y: f32 = 80.0;
 const PILL_CENTER_BOTTOM_INSET: f32 = 45.0;
+const ACTIVE_STACK_OFFSET_Y: f32 = 0.0;
+const MINIMIZED_STACK_OFFSET_Y: f32 = 10.0;
 const HOVER_TOOLTIP_OFFSET_Y: f32 = -24.0;
 const CARD_GAP_Y: f32 = 50.0;
 const TIMER_GAP_Y: f32 = 40.0;
@@ -71,6 +77,7 @@ const IDLE_PILL_H: f32 = 20.0;
 const PILL_HIT_PADDING: f32 = 12.0;
 const CONTROL_BUTTON_OFFSET: f32 = 49.0;
 const CONTROL_HIT_RADIUS: f32 = 17.0;
+const GRADIENT_DITHER_ALPHA: f32 = 3.0;
 
 const POSITION_SCALE: [f32; 11] = [
     0.35, 0.45, 0.6, 0.78, 0.92, 1.0, 0.94, 0.8, 0.63, 0.48, 0.38,
@@ -324,12 +331,6 @@ impl AnimState {
         } else {
             IDLE_PILL_SCALE
         };
-        let audio_bounce = if state.mode == "recording" && !state.paused {
-            let lvl = state.level.min(1.0);
-            1.0 + lvl.powf(1.5) * 0.12
-        } else {
-            1.0
-        };
         let press_scale = if state.is_pressed { PRESS_SCALE } else { 1.0 };
         let proc_scale = if state.mode == "processing" {
             PROCESSING_SCALE
@@ -337,7 +338,7 @@ impl AnimState {
             1.0
         };
         self.pill_scale
-            .set_target(base_scale * audio_bounce * press_scale * proc_scale);
+            .set_target(base_scale * press_scale * proc_scale);
 
         // -- Gradient energy --
         let energy = match state.mode.as_str() {
@@ -577,6 +578,9 @@ pub fn update_state(f: impl FnOnce(&mut OverlayState)) {
     if let Some(state) = STATE.get() {
         let mut s = state.lock().unwrap();
         f(&mut s);
+        if s.mode != "idle" || s.onboarding_step.is_some() {
+            s.hovering = false;
+        }
     }
     // Trigger re-render on the overlay thread
     if let Some(&raw_hwnd) = HWND_CELL.get() {
@@ -711,9 +715,20 @@ unsafe extern "system" fn wnd_proc(
                         st.error = None;
                     });
                 }
-                let state = STATE.get().map(|s| s.lock().unwrap().clone());
-                if let Some(state) = &state {
-                    if ctx.anim.needs_animation(state) || msg == WM_YAP_UPDATE {
+                let mut state = STATE.get().map(|s| s.lock().unwrap().clone());
+                if let Some(current) = &state {
+                    let mut force_render = msg == WM_YAP_UPDATE;
+                    if msg == WM_TIMER && current.hovering {
+                        force_render = sync_hover_from_cursor(hwnd, current, &ctx.anim);
+                        state = STATE.get().map(|s| s.lock().unwrap().clone());
+                    }
+                    if force_render {
+                        render_frame(hwnd, &mut ctx.anim, &ctx.font);
+                        return LRESULT(0);
+                    }
+                }
+                if let Some(current) = &state {
+                    if ctx.anim.needs_animation(current) {
                         render_frame(hwnd, &mut ctx.anim, &ctx.font);
                     }
                 }
@@ -754,19 +769,27 @@ unsafe extern "system" fn wnd_proc(
             };
             let _ = TrackMouseEvent(&mut tme);
 
-            if let Some(state) = STATE.get() {
-                let mut s = state.lock().unwrap();
-                let should_hover = s.mode == "idle" && s.onboarding_step.is_none();
-                if s.hovering != should_hover {
-                    s.hovering = should_hover;
+            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RenderContext;
+            if !ptr.is_null() {
+                let state = STATE.get().map(|s| s.lock().unwrap().clone());
+                if let Some(state) = state {
+                    let ctx = &mut *ptr;
+                    let mouse_x = get_x_lparam(lparam) as f32;
+                    let mouse_y = get_y_lparam(lparam) as f32;
+                    if set_hovering(
+                        state.mode == "idle"
+                            && state.onboarding_step.is_none()
+                            && hit_test_overlay(mouse_x, mouse_y, &state, &ctx.anim),
+                    ) {
+                        let _ = PostMessageW(hwnd, WM_YAP_UPDATE, WPARAM(0), LPARAM(0));
+                    }
                 }
             }
             LRESULT(0)
         }
         WM_MOUSELEAVE => {
-            if let Some(state) = STATE.get() {
-                let mut s = state.lock().unwrap();
-                s.hovering = false;
+            if set_hovering(false) {
+                let _ = PostMessageW(hwnd, WM_YAP_UPDATE, WPARAM(0), LPARAM(0));
             }
             LRESULT(0)
         }
@@ -786,17 +809,19 @@ unsafe extern "system" fn wnd_proc(
 
                 if state.hands_free && state.mode == "recording" {
                     // Check pause/stop button hits
-                    let pause_cx = geom.content_cx - CONTROL_BUTTON_OFFSET * geom.audio_bounce;
-                    let stop_cx = geom.content_cx + CONTROL_BUTTON_OFFSET * geom.audio_bounce;
+                    let button_offset = CONTROL_BUTTON_OFFSET * geom.pill_scale;
+                    let pause_cx = geom.content_cx - button_offset;
+                    let stop_cx = geom.content_cx + button_offset;
 
                     let pause_dist =
                         ((mouse_x - pause_cx).powi(2) + (mouse_y - geom.pill_cy).powi(2)).sqrt();
                     let stop_dist =
                         ((mouse_x - stop_cx).powi(2) + (mouse_y - geom.pill_cy).powi(2)).sqrt();
 
-                    if pause_dist < CONTROL_HIT_RADIUS {
+                    let control_hit_radius = CONTROL_HIT_RADIUS * geom.pill_scale.max(0.75);
+                    if pause_dist < control_hit_radius {
                         on_pause_callback();
-                    } else if stop_dist < CONTROL_HIT_RADIUS {
+                    } else if stop_dist < control_hit_radius {
                         on_stop_callback();
                     }
                 } else if state.mode != "processing" {
@@ -862,6 +887,37 @@ fn get_y_lparam(lparam: LPARAM) -> i32 {
     ((lparam.0 >> 16) & 0xFFFF) as i16 as i32
 }
 
+fn set_hovering(hovering: bool) -> bool {
+    if let Some(state) = STATE.get() {
+        let mut s = state.lock().unwrap();
+        if s.hovering != hovering {
+            s.hovering = hovering;
+            return true;
+        }
+    }
+    false
+}
+
+fn sync_hover_from_cursor(hwnd: HWND, state: &OverlayState, anim: &AnimState) -> bool {
+    if state.mode != "idle" || state.onboarding_step.is_some() {
+        return set_hovering(false);
+    }
+
+    unsafe {
+        let mut point = POINT::default();
+        if GetCursorPos(&mut point).is_err() {
+            return set_hovering(false);
+        }
+        let _ = ScreenToClient(hwnd, &mut point);
+        set_hovering(hit_test_overlay(
+            point.x as f32,
+            point.y as f32,
+            state,
+            anim,
+        ))
+    }
+}
+
 struct OverlayGeometry {
     cx: f32,
     pill_cy: f32,
@@ -870,7 +926,6 @@ struct OverlayGeometry {
     pill_h: f32,
     pill_scale: f32,
     shake_offset: f32,
-    audio_bounce: f32,
 }
 
 fn overlay_geometry(state: &OverlayState, anim: Option<&AnimState>) -> OverlayGeometry {
@@ -894,11 +949,10 @@ fn overlay_geometry(state: &OverlayState, anim: Option<&AnimState>) -> OverlayGe
         })
         .unwrap_or(0.0);
     let is_expanded = state.mode != "idle" || state.onboarding_step.is_some();
-    let audio_bounce = if state.mode == "recording" && !state.paused {
-        let lvl = state.level.min(1.0);
-        1.0 + lvl.powf(1.5) * 0.12
+    let stack_offset_y = if is_expanded {
+        ACTIVE_STACK_OFFSET_Y
     } else {
-        1.0
+        MINIMIZED_STACK_OFFSET_Y
     };
     let content_w = pill_content_width(state, None);
     let pill_h = if is_expanded {
@@ -909,13 +963,12 @@ fn overlay_geometry(state: &OverlayState, anim: Option<&AnimState>) -> OverlayGe
 
     OverlayGeometry {
         cx,
-        pill_cy: CANVAS_H as f32 - PILL_CENTER_BOTTOM_INSET + slide_y,
+        pill_cy: CANVAS_H as f32 - PILL_CENTER_BOTTOM_INSET + stack_offset_y + slide_y,
         content_cx: cx + shake_offset,
         pill_w: content_w * pill_scale,
         pill_h,
         pill_scale,
         shake_offset,
-        audio_bounce,
     }
 }
 
@@ -960,19 +1013,21 @@ fn hit_test_overlay(x: f32, y: f32, state: &OverlayState, anim: &AnimState) -> b
     let geom = overlay_geometry(state, Some(anim));
 
     if state.hands_free && state.mode == "recording" {
-        let pause_cx = geom.content_cx - CONTROL_BUTTON_OFFSET * geom.audio_bounce;
-        let stop_cx = geom.content_cx + CONTROL_BUTTON_OFFSET * geom.audio_bounce;
+        let button_offset = CONTROL_BUTTON_OFFSET * geom.pill_scale;
+        let pause_cx = geom.content_cx - button_offset;
+        let stop_cx = geom.content_cx + button_offset;
         let pause_dist = ((x - pause_cx).powi(2) + (y - geom.pill_cy).powi(2)).sqrt();
         let stop_dist = ((x - stop_cx).powi(2) + (y - geom.pill_cy).powi(2)).sqrt();
-        if pause_dist < CONTROL_HIT_RADIUS || stop_dist < CONTROL_HIT_RADIUS {
+        let control_hit_radius = CONTROL_HIT_RADIUS * geom.pill_scale.max(0.75);
+        if pause_dist < control_hit_radius || stop_dist < control_hit_radius {
             return true;
         }
     }
 
     let half_w = geom.pill_w / 2.0 + PILL_HIT_PADDING;
     let half_h = geom.pill_h / 2.0 + PILL_HIT_PADDING;
-    x >= geom.cx - half_w
-        && x <= geom.cx + half_w
+    x >= geom.content_cx - half_w
+        && x <= geom.content_cx + half_w
         && y >= geom.pill_cy - half_h
         && y <= geom.pill_cy + half_h
 }
@@ -1099,33 +1154,56 @@ fn render_frame(hwnd: HWND, anim: &mut AnimState, font: &Option<FontRenderer>) {
                 } else {
                     "to continue"
                 };
-                let hold_w = fr.measure("Hold ", 12.0);
-                let key_w = fr.measure(&state.hotkey_label, 12.0) + 20.0; // keycap padding
-                let suffix_w = fr.measure(suffix, 12.0);
-                let total_w = hold_w + key_w + 6.0 + suffix_w;
+                let font_size = 12.0 * pill_scale;
+                let gap = 6.0 * pill_scale;
+                let hold_w = fr.measure("Hold ", font_size);
+                let key_w = fr.measure(&state.hotkey_label, font_size) + 20.0 * pill_scale;
+                let suffix_w = fr.measure(suffix, font_size);
+                let total_w = hold_w + key_w + gap + suffix_w;
                 let start_x = pill_content_cx - total_w / 2.0;
 
-                let text_y = pill_cy + 4.0;
+                let text_y = pill_cy + 4.0 * pill_scale;
                 let color = [255, 255, 255, 200];
                 let mut x = start_x;
-                x += fr.render(&mut pixmap, "Hold ", x, text_y, 12.0, color);
+                x += fr.render(&mut pixmap, "Hold ", x, text_y, font_size, color);
                 // Draw keycap
-                render_keycap(&mut pixmap, font, &state.hotkey_label, x, pill_cy, 12.0);
-                x += key_w + 6.0;
-                fr.render(&mut pixmap, suffix, x, text_y, 12.0, color);
+                render_keycap(
+                    &mut pixmap,
+                    font,
+                    &state.hotkey_label,
+                    x,
+                    pill_cy,
+                    font_size,
+                );
+                x += key_w + gap;
+                fr.render(&mut pixmap, suffix, x, text_y, font_size, color);
             }
         } else if state.mode == "idle" || state.mode == "noSpeech" {
             // Flat bars for onboarding idle
-            render_flat_bars(&mut pixmap, pill_content_cx, pill_cy);
+            render_flat_bars(&mut pixmap, pill_content_cx, pill_cy, pill_scale);
         }
     }
 
     match state.mode.as_str() {
         "recording" | "processing" => {
             if state.hands_free {
-                render_hands_free_content(&mut pixmap, anim, &state, pill_content_cx, pill_cy);
+                render_hands_free_content(
+                    &mut pixmap,
+                    anim,
+                    &state,
+                    pill_content_cx,
+                    pill_cy,
+                    pill_scale,
+                );
             } else {
-                render_bars(&mut pixmap, anim, &state, pill_content_cx, pill_cy);
+                render_bars(
+                    &mut pixmap,
+                    anim,
+                    &state,
+                    pill_content_cx,
+                    pill_cy,
+                    pill_scale,
+                );
             }
         }
         "error" => {
@@ -1139,14 +1217,14 @@ fn render_frame(hwnd: HWND, anim: &mut AnimState, font: &Option<FontRenderer>) {
             if state.onboarding_step.is_none()
                 || !state.onboarding_step.as_ref().unwrap().shows_hold_prompt()
             {
-                render_flat_bars(&mut pixmap, pill_content_cx, pill_cy);
+                render_flat_bars(&mut pixmap, pill_content_cx, pill_cy, pill_scale);
             }
         }
         "idle" => {
             if state.onboarding_step.is_none() {
                 if state.hovering {
                     // Mic icon
-                    draw_mic_icon(&mut pixmap, pill_content_cx, pill_cy);
+                    draw_mic_icon(&mut pixmap, pill_content_cx, pill_cy, pill_scale);
                 }
             }
         }
@@ -1291,7 +1369,8 @@ fn render_gradient(pixmap: &mut tiny_skia::Pixmap, anim: &AnimState, cx: f32, cy
                 } // 1.9^2, beyond visible range
 
                 let falloff = (-dist_sq * 0.9).exp();
-                let alpha = (blob.a * falloff * 255.0).clamp(0.0, 255.0) as u16;
+                let dither = (gradient_dither(px, py) - 0.5) * GRADIENT_DITHER_ALPHA;
+                let alpha = (blob.a * falloff * 255.0 + dither).clamp(0.0, 255.0) as u16;
                 if alpha == 0 {
                     continue;
                 }
@@ -1326,20 +1405,32 @@ fn render_gradient(pixmap: &mut tiny_skia::Pixmap, anim: &AnimState, cx: f32, cy
     }
 }
 
+fn gradient_dither(x: u32, y: u32) -> f32 {
+    let mut n = x
+        .wrapping_mul(374_761_393)
+        .wrapping_add(y.wrapping_mul(668_265_263));
+    n = (n ^ (n >> 13)).wrapping_mul(1_274_126_177);
+    ((n ^ (n >> 16)) & 0xff) as f32 / 255.0
+}
+
 fn render_bars(
     pixmap: &mut tiny_skia::Pixmap,
     anim: &AnimState,
     state: &OverlayState,
     cx: f32,
     cy: f32,
+    scale: f32,
 ) {
-    let start_x = cx - BARS_TOTAL_W / 2.0;
+    let bar_w = BAR_W * scale;
+    let bar_gap = BAR_GAP * scale;
+    let bars_total_w = BARS_TOTAL_W * scale;
+    let start_x = cx - bars_total_w / 2.0;
     let is_processing = state.mode == "processing";
     let t = anim.start_time.elapsed().as_secs_f64();
 
     for i in 0..BAR_COUNT {
-        let bar_h = anim.bar_springs[i].val();
-        let x = start_x + i as f32 * (BAR_W + BAR_GAP);
+        let bar_h = anim.bar_springs[i].val() * scale;
+        let x = start_x + i as f32 * (bar_w + bar_gap);
         let y = cy - bar_h / 2.0;
 
         let opacity = if is_processing {
@@ -1352,7 +1443,7 @@ fn render_bars(
             0.9
         };
 
-        let bar_path = rounded_rect(x, y, BAR_W, bar_h, 1.5);
+        let bar_path = rounded_rect(x, y, bar_w, bar_h, 1.5 * scale);
         let mut paint = tiny_skia::Paint::default();
         paint.set_color(tiny_skia::Color::from_rgba(1.0, 1.0, 1.0, opacity).unwrap());
         paint.anti_alias = true;
@@ -1372,44 +1463,41 @@ fn render_hands_free_content(
     state: &OverlayState,
     cx: f32,
     cy: f32,
+    scale: f32,
 ) {
-    let audio_bounce = if state.mode == "recording" && !state.paused {
-        let lvl = state.level.min(1.0);
-        1.0 + lvl.powf(1.5) * 0.12
-    } else {
-        1.0
-    };
-
     // Bars in center
     if state.paused {
-        render_flat_bars(pixmap, cx, cy);
+        render_flat_bars(pixmap, cx, cy, scale);
     } else {
-        render_bars(pixmap, anim, state, cx, cy);
+        render_bars(pixmap, anim, state, cx, cy, scale);
     }
 
     // Pause button (left)
-    let pause_cx = cx - 49.0 * audio_bounce;
-    render_circle_button(pixmap, pause_cx, cy, 13.0, [255, 255, 255, 38]); // bg
+    let pause_cx = cx - CONTROL_BUTTON_OFFSET * scale;
+    render_circle_button(pixmap, pause_cx, cy, 13.0 * scale, [255, 255, 255, 38]); // bg
     if state.paused {
         // Play triangle
-        draw_play_icon(pixmap, pause_cx, cy);
+        draw_play_icon(pixmap, pause_cx, cy, scale);
     } else {
         // Pause bars
-        draw_pause_icon(pixmap, pause_cx, cy);
+        draw_pause_icon(pixmap, pause_cx, cy, scale);
     }
 
     // Stop button (right)
-    let stop_cx = cx + 49.0 * audio_bounce;
-    render_circle_button(pixmap, stop_cx, cy, 13.0, [217, 48, 48, 217]); // red bg
-    draw_stop_icon(pixmap, stop_cx, cy);
+    let stop_cx = cx + CONTROL_BUTTON_OFFSET * scale;
+    render_circle_button(pixmap, stop_cx, cy, 13.0 * scale, [217, 48, 48, 217]); // red bg
+    draw_stop_icon(pixmap, stop_cx, cy, scale);
 }
 
-fn render_flat_bars(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32) {
-    let start_x = cx - BARS_TOTAL_W / 2.0;
+fn render_flat_bars(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, scale: f32) {
+    let bar_w = BAR_W * scale;
+    let bar_gap = BAR_GAP * scale;
+    let bar_h = BAR_MIN_H * scale;
+    let start_x = cx - BARS_TOTAL_W * scale / 2.0;
     for i in 0..BAR_COUNT {
-        let x = start_x + i as f32 * (BAR_W + BAR_GAP);
-        let y = cy - BAR_MIN_H / 2.0;
-        let bar_path = rounded_rect(x, y, BAR_W, BAR_MIN_H, 1.5);
+        let x = start_x + i as f32 * (bar_w + bar_gap);
+        let y = cy - bar_h / 2.0;
+        let bar_path = rounded_rect(x, y, bar_w, bar_h, 1.5 * scale);
         let mut paint = tiny_skia::Paint::default();
         paint.set_color(tiny_skia::Color::from_rgba(1.0, 1.0, 1.0, 0.25).unwrap());
         paint.anti_alias = true;
@@ -1456,16 +1544,22 @@ fn render_circle_button(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, r: f32
     }
 }
 
-fn draw_pause_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32) {
+fn draw_pause_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, scale: f32) {
     let mut paint = tiny_skia::Paint::default();
     paint.set_color(tiny_skia::Color::from_rgba(1.0, 1.0, 1.0, 0.9).unwrap());
     paint.anti_alias = true;
     // Two vertical bars
-    let bar_w = 2.5;
-    let bar_h = 10.0;
-    let gap = 3.5;
-    let left = rounded_rect(cx - gap / 2.0 - bar_w, cy - bar_h / 2.0, bar_w, bar_h, 1.0);
-    let right = rounded_rect(cx + gap / 2.0, cy - bar_h / 2.0, bar_w, bar_h, 1.0);
+    let bar_w = 2.5 * scale;
+    let bar_h = 10.0 * scale;
+    let gap = 3.5 * scale;
+    let left = rounded_rect(
+        cx - gap / 2.0 - bar_w,
+        cy - bar_h / 2.0,
+        bar_w,
+        bar_h,
+        1.0 * scale,
+    );
+    let right = rounded_rect(cx + gap / 2.0, cy - bar_h / 2.0, bar_w, bar_h, 1.0 * scale);
     pixmap.fill_path(
         &left,
         &paint,
@@ -1482,12 +1576,12 @@ fn draw_pause_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32) {
     );
 }
 
-fn draw_play_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32) {
+fn draw_play_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, scale: f32) {
     let mut paint = tiny_skia::Paint::default();
     paint.set_color(tiny_skia::Color::from_rgba(1.0, 1.0, 1.0, 0.9).unwrap());
     paint.anti_alias = true;
     let mut pb = tiny_skia::PathBuilder::new();
-    let size = 6.0;
+    let size = 6.0 * scale;
     pb.move_to(cx - size * 0.4, cy - size);
     pb.line_to(cx + size * 0.8, cy);
     pb.line_to(cx - size * 0.4, cy + size);
@@ -1503,12 +1597,12 @@ fn draw_play_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32) {
     }
 }
 
-fn draw_stop_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32) {
+fn draw_stop_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, scale: f32) {
     let mut paint = tiny_skia::Paint::default();
     paint.set_color(tiny_skia::Color::from_rgba(1.0, 1.0, 1.0, 1.0).unwrap());
     paint.anti_alias = true;
-    let size = 4.5;
-    let rect = rounded_rect(cx - size, cy - size, size * 2.0, size * 2.0, 1.5);
+    let size = 4.5 * scale;
+    let rect = rounded_rect(cx - size, cy - size, size * 2.0, size * 2.0, 1.5 * scale);
     pixmap.fill_path(
         &rect,
         &paint,
@@ -1518,13 +1612,19 @@ fn draw_stop_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32) {
     );
 }
 
-fn draw_mic_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32) {
+fn draw_mic_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, scale: f32) {
     let mut paint = tiny_skia::Paint::default();
     paint.set_color(tiny_skia::Color::from_rgba(1.0, 1.0, 1.0, 0.9).unwrap());
     paint.anti_alias = true;
 
     // Mic body (rounded rect)
-    let mic = rounded_rect(cx - 4.0, cy - 9.0, 8.0, 13.0, 4.0);
+    let mic = rounded_rect(
+        cx - 4.0 * scale,
+        cy - 9.0 * scale,
+        8.0 * scale,
+        13.0 * scale,
+        4.0 * scale,
+    );
     pixmap.fill_path(
         &mic,
         &paint,
@@ -1535,21 +1635,35 @@ fn draw_mic_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32) {
 
     // Mic arc
     let stroke = tiny_skia::Stroke {
-        width: 1.5,
+        width: 1.5 * scale,
         ..Default::default()
     };
     let mut pb = tiny_skia::PathBuilder::new();
-    pb.move_to(cx - 7.0, cy);
-    pb.cubic_to(cx - 7.0, cy + 6.0, cx - 4.0, cy + 9.0, cx, cy + 9.0);
-    pb.cubic_to(cx + 4.0, cy + 9.0, cx + 7.0, cy + 6.0, cx + 7.0, cy);
+    pb.move_to(cx - 7.0 * scale, cy);
+    pb.cubic_to(
+        cx - 7.0 * scale,
+        cy + 6.0 * scale,
+        cx - 4.0 * scale,
+        cy + 9.0 * scale,
+        cx,
+        cy + 9.0 * scale,
+    );
+    pb.cubic_to(
+        cx + 4.0 * scale,
+        cy + 9.0 * scale,
+        cx + 7.0 * scale,
+        cy + 6.0 * scale,
+        cx + 7.0 * scale,
+        cy,
+    );
     if let Some(path) = pb.finish() {
         pixmap.stroke_path(&path, &paint, &stroke, Default::default(), None);
     }
 
     // Mic stem
     let mut pb = tiny_skia::PathBuilder::new();
-    pb.move_to(cx, cy + 9.0);
-    pb.line_to(cx, cy + 12.0);
+    pb.move_to(cx, cy + 9.0 * scale);
+    pb.line_to(cx, cy + 12.0 * scale);
     if let Some(path) = pb.finish() {
         pixmap.stroke_path(&path, &paint, &stroke, Default::default(), None);
     }
@@ -1661,13 +1775,14 @@ fn render_keycap(
         None => return,
     };
     let text_w = fr.measure(label, font_size);
-    let pad = 10.0;
+    let ui_scale = (font_size / 12.0).max(0.5);
+    let pad = 10.0 * ui_scale;
     let kw = text_w + pad * 2.0;
-    let kh = font_size + 10.0;
+    let kh = font_size + 10.0 * ui_scale;
     let ky = cy - kh / 2.0;
 
     // Keycap background
-    let key_path = rounded_rect(x, ky, kw, kh, 5.0);
+    let key_path = rounded_rect(x, ky, kw, kh, 5.0 * ui_scale);
     let mut bg = tiny_skia::Paint::default();
     bg.set_color(tiny_skia::Color::from_rgba(0.25, 0.25, 0.25, 1.0).unwrap());
     bg.anti_alias = true;
