@@ -92,6 +92,7 @@
   };
 
   const styleExampleInput = 'yeah i was thinking we could try that new place on friday if youre free';
+  const modifierOrder = ['cmd', 'ctrl', 'option', 'shift', 'fn'];
 
   // ── State ─────────────────────────────────────────────────────────────
 
@@ -102,6 +103,8 @@
   let hotkey = $state('fn');
   let capturingHotkey = $state(false);
   let hotkeyPreview = $state('');
+  let webPressedHotkeyParts: string[] = [];
+  let webLastHotkey = '';
   let microphones = $state<string[]>([]);
   let selectedMic = $state('');
 
@@ -268,6 +271,7 @@
 
   async function toggleHotkeyCapture() {
     hotkeyPreview = '';
+    resetWebHotkeyCapture();
     capturingHotkey = !capturingHotkey;
 
     if (capturingHotkey) {
@@ -280,6 +284,7 @@
   function setCapturedHotkey(value: string) {
     hotkey = value;
     hotkeyPreview = '';
+    resetWebHotkeyCapture();
     capturingHotkey = false;
     void invoke('cancel_hotkey_capture');
   }
@@ -291,11 +296,29 @@
       e.preventDefault();
       e.stopPropagation();
 
-      if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      if (
+        e.key === 'Escape'
+        && !e.metaKey
+        && !e.ctrlKey
+        && !e.altKey
+        && !e.shiftKey
+        && webPressedHotkeyParts.length === 0
+      ) {
         hotkeyPreview = '';
+        resetWebHotkeyCapture();
         capturingHotkey = false;
         void invoke('cancel_hotkey_capture');
         return;
+      }
+
+      const key = canonicalKeyFromEvent(e);
+      syncWebModifiers(e);
+      if (key) addWebHotkeyPart(key);
+
+      const preview = webHotkeyFromPressed();
+      if (preview) {
+        webLastHotkey = preview;
+        hotkeyPreview = preview;
       }
       return;
     }
@@ -311,6 +334,101 @@
     if (!capturingHotkey) return;
     e.preventDefault();
     e.stopPropagation();
+
+    const key = canonicalKeyFromEvent(e);
+    if (key) removeWebHotkeyPart(key);
+    syncWebModifiers(e);
+
+    if (webPressedHotkeyParts.length === 0 && webLastHotkey) {
+      setCapturedHotkey(webLastHotkey);
+    }
+  }
+
+  function resetWebHotkeyCapture() {
+    webPressedHotkeyParts = [];
+    webLastHotkey = '';
+  }
+
+  function addWebHotkeyPart(part: string) {
+    if (!webPressedHotkeyParts.includes(part)) {
+      webPressedHotkeyParts = [...webPressedHotkeyParts, part];
+    }
+  }
+
+  function removeWebHotkeyPart(part: string) {
+    webPressedHotkeyParts = webPressedHotkeyParts.filter((pressed) => pressed !== part);
+  }
+
+  function syncWebModifiers(e: KeyboardEvent) {
+    syncWebModifier('cmd', e.metaKey);
+    syncWebModifier('ctrl', e.ctrlKey);
+    syncWebModifier('option', e.altKey);
+    syncWebModifier('shift', e.shiftKey);
+  }
+
+  function syncWebModifier(part: string, pressed: boolean) {
+    if (pressed) {
+      addWebHotkeyPart(part);
+    } else {
+      removeWebHotkeyPart(part);
+    }
+  }
+
+  function webHotkeyFromPressed(): string {
+    const modifiers = modifierOrder.filter((modifier) => webPressedHotkeyParts.includes(modifier));
+    const triggers = webPressedHotkeyParts.filter((part) => !modifierOrder.includes(part));
+    return [...modifiers, ...triggers].join('+');
+  }
+
+  function canonicalKeyFromEvent(e: KeyboardEvent): string {
+    if (e.key === 'Meta' || e.code === 'MetaLeft' || e.code === 'MetaRight') return 'cmd';
+    if (e.key === 'Control' || e.code === 'ControlLeft' || e.code === 'ControlRight') return 'ctrl';
+    if (e.key === 'Alt' || e.key === 'Option' || e.code === 'AltLeft' || e.code === 'AltRight') return 'option';
+    if (e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') return 'shift';
+    if (e.key === 'Fn' || e.key === 'fn' || e.key === 'F24') return 'fn';
+    if (isWindowsPlatform() && e.code === 'CapsLock') return 'fn';
+    if (e.code.startsWith('Key')) return e.code.slice(3).toLowerCase();
+    if (e.code.startsWith('Digit')) return e.code.slice(5);
+    if (e.code.startsWith('Numpad') && e.code.length === 7) return e.code.slice(6);
+    if (e.code.startsWith('F') && /^F\d{1,2}$/.test(e.code)) return e.code.toLowerCase();
+
+    const namedKeys: Record<string, string> = {
+      Space: 'space',
+      Enter: 'return',
+      Return: 'return',
+      Tab: 'tab',
+      Escape: 'escape',
+      Backspace: 'delete',
+      Delete: 'forwarddelete',
+      CapsLock: 'capslock',
+      ArrowLeft: 'left',
+      ArrowRight: 'right',
+      ArrowUp: 'up',
+      ArrowDown: 'down',
+      Home: 'home',
+      End: 'end',
+      PageUp: 'pageup',
+      PageDown: 'pagedown',
+      Semicolon: ';',
+      Equal: '=',
+      Comma: ',',
+      Minus: '-',
+      Period: '.',
+      Slash: '/',
+      Backquote: '`',
+      BracketLeft: '[',
+      Backslash: '\\',
+      BracketRight: ']',
+      Quote: "'",
+    };
+
+    if (namedKeys[e.code]) return namedKeys[e.code];
+    if (e.key.length === 1) return e.key.toLowerCase();
+    return '';
+  }
+
+  function isWindowsPlatform(): boolean {
+    return typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows');
   }
 
   // ── Hotkey Display ────────────────────────────────────────────────────
