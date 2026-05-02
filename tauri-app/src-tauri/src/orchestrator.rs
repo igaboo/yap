@@ -192,6 +192,8 @@ struct OrchestratorInner {
     peak_level: f32,
     /// Timestamp when the current recording started.
     recording_start: Option<Instant>,
+    /// Elapsed recording time banked before the current pause/resume segment.
+    recording_elapsed_before_pause: Duration,
     /// Monotonic id for the active/most recent recording attempt. Used to
     /// cancel delayed feedback from a tap that became part of a double-tap.
     recording_generation: u64,
@@ -220,7 +222,7 @@ struct OrchestratorInner {
 impl OrchestratorInner {
     fn begin_press_pending(&mut self) -> u64 {
         self.state = AppState::PressPending;
-        self.recording_start = Some(Instant::now());
+        self.reset_recording_clock();
         self.peak_level = 0.0;
         self.recording_generation = self.recording_generation.wrapping_add(1);
         let generation = self.recording_generation;
@@ -230,7 +232,7 @@ impl OrchestratorInner {
 
     fn begin_recording(&mut self) -> u64 {
         self.state = AppState::Recording;
-        self.recording_start = Some(Instant::now());
+        self.reset_recording_clock();
         self.peak_level = 0.0;
         self.recording_generation = self.recording_generation.wrapping_add(1);
         let generation = self.recording_generation;
@@ -243,10 +245,33 @@ impl OrchestratorInner {
             return false;
         }
         self.state = AppState::Recording;
-        self.recording_start = Some(Instant::now());
+        self.reset_recording_clock();
         self.peak_level = 0.0;
         self.emit_state();
         true
+    }
+
+    fn reset_recording_clock(&mut self) {
+        self.recording_start = Some(Instant::now());
+        self.recording_elapsed_before_pause = Duration::ZERO;
+    }
+
+    fn pause_recording_clock(&mut self) {
+        if let Some(start) = self.recording_start.take() {
+            self.recording_elapsed_before_pause += start.elapsed();
+        }
+    }
+
+    fn resume_recording_clock(&mut self) {
+        self.recording_start = Some(Instant::now());
+    }
+
+    fn recording_elapsed(&self) -> Duration {
+        self.recording_elapsed_before_pause
+            + self
+                .recording_start
+                .map(|start| start.elapsed())
+                .unwrap_or_default()
     }
 
     /// Emit an overlay display state to every renderer without changing the
@@ -307,41 +332,21 @@ impl OrchestratorInner {
 
         // Include hands-free metadata when in a recording state
         let (hands_free, paused, elapsed) = match self.state {
-            AppState::HandsFreeRecording => {
-                let elapsed = self
-                    .recording_start
-                    .map(|s| s.elapsed().as_secs_f64())
-                    .unwrap_or(0.0);
-                (Some(true), Some(false), Some(elapsed))
-            }
-            AppState::HandsFreePaused => {
-                let elapsed = self
-                    .recording_start
-                    .map(|s| s.elapsed().as_secs_f64())
-                    .unwrap_or(0.0);
-                (Some(true), Some(true), Some(elapsed))
-            }
-            AppState::Recording => {
-                let elapsed = self
-                    .recording_start
-                    .map(|s| s.elapsed().as_secs_f64())
-                    .unwrap_or(0.0);
-                (Some(false), None, Some(elapsed))
-            }
-            AppState::PressPending => {
-                let elapsed = self
-                    .recording_start
-                    .map(|s| s.elapsed().as_secs_f64())
-                    .unwrap_or(0.0);
-                (Some(false), None, Some(elapsed))
-            }
-            AppState::TapPending => {
-                let elapsed = self
-                    .recording_start
-                    .map(|s| s.elapsed().as_secs_f64())
-                    .unwrap_or(0.0);
-                (Some(false), None, Some(elapsed))
-            }
+            AppState::HandsFreeRecording => (
+                Some(true),
+                Some(false),
+                Some(self.recording_elapsed().as_secs_f64()),
+            ),
+            AppState::HandsFreePaused => (
+                Some(true),
+                Some(true),
+                Some(self.recording_elapsed().as_secs_f64()),
+            ),
+            AppState::Recording | AppState::PressPending | AppState::TapPending => (
+                Some(false),
+                None,
+                Some(self.recording_elapsed().as_secs_f64()),
+            ),
             _ => (None, None, None),
         };
 
@@ -459,6 +464,7 @@ impl Orchestrator {
                 enabled: true,
                 peak_level: 0.0,
                 recording_start: None,
+                recording_elapsed_before_pause: Duration::ZERO,
                 recording_generation: 0,
                 ignore_pending_key_up: false,
                 app,
@@ -659,10 +665,7 @@ impl Orchestrator {
             return;
         }
 
-        let duration = inner
-            .recording_start
-            .map(|s| s.elapsed().as_secs_f64())
-            .unwrap_or(0.0);
+        let duration = inner.recording_elapsed().as_secs_f64();
         let peak = inner.peak_level;
         drop(inner);
 
@@ -768,12 +771,14 @@ impl Orchestrator {
         match inner.state {
             AppState::HandsFreeRecording => {
                 audio::pause_recording();
+                inner.pause_recording_clock();
                 inner.state = AppState::HandsFreePaused;
                 inner.emit_state();
                 log::info("Hands-free: paused");
             }
             AppState::HandsFreePaused => {
                 audio::resume_recording();
+                inner.resume_recording_clock();
                 inner.state = AppState::HandsFreeRecording;
                 inner.emit_state();
                 log::info("Hands-free: resumed");
