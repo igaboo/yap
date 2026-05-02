@@ -47,8 +47,9 @@ const WM_YAP_UPDATE: u32 = WM_USER + 1;
 const SLIDE_OFFSET_Y: f32 = 80.0;
 const PILL_CENTER_BOTTOM_INSET: f32 = 45.0;
 const ACTIVE_STACK_OFFSET_Y: f32 = 0.0;
-const MINIMIZED_STACK_OFFSET_Y: f32 = 10.0;
+const MINIMIZED_STACK_OFFSET_Y: f32 = 34.0;
 const HOVER_TOOLTIP_OFFSET_Y: f32 = -24.0;
+const HOVER_TOOLTIP_TRANSITION_Y: f32 = 4.0;
 const CARD_GAP_Y: f32 = 50.0;
 const TIMER_GAP_Y: f32 = 40.0;
 const EXPANDED_PILL_SCALE: f32 = 0.82;
@@ -56,6 +57,7 @@ const HOVER_PILL_SCALE: f32 = 0.58;
 const IDLE_PILL_SCALE: f32 = 0.5;
 const PROCESSING_SCALE: f32 = 0.8;
 const PRESS_SCALE: f32 = 0.85;
+const AUDIO_BOUNCE_SCALE: f32 = 0.12;
 const CELEBRATION_DURATION: Duration = Duration::from_millis(3000);
 const FULL_CIRCLE: f64 = std::f64::consts::PI * 2.0;
 const FRAME_INTERVAL_MS: u32 = 16;
@@ -242,6 +244,10 @@ struct AnimState {
     gradient_energy: Spring,      // 0.0–1.0
     hover_progress: Spring,       // 0→1 for hover transition
     slide_y: Spring,              // Y offset for slide in/out
+    stack_y: Spring,              // Active/minimized stack offset
+    content_width: Spring,        // Pill content width, including controls
+    audio_bounce: Spring,         // Recording scale pulse driven by audio level
+    hands_free_progress: Spring,  // 0→1 for pause/stop control entrance
     error_timer: Option<Instant>, // When error was shown
     shake_progress: f32,          // 0→1 for no-speech shake
     shake_active: bool,
@@ -262,6 +268,10 @@ impl AnimState {
             gradient_energy: Spring::new(0.0, 120.0, 18.0),
             hover_progress: Spring::new(0.0, 200.0, 22.0),
             slide_y: Spring::new(80.0, 150.0, 20.0), // start off-screen
+            stack_y: Spring::new(MINIMIZED_STACK_OFFSET_Y, 150.0, 20.0),
+            content_width: Spring::new(IDLE_CONTENT_W, 180.0, 22.0),
+            audio_bounce: Spring::new(1.0, 160.0, 24.0),
+            hands_free_progress: Spring::new(0.0, 180.0, 22.0),
             error_timer: None,
             shake_progress: 0.0,
             shake_active: false,
@@ -323,7 +333,22 @@ impl AnimState {
             self.visible = false;
         }
 
-        // -- Pill scale --
+        // -- Stack and pill geometry --
+        self.stack_y.set_target(if is_expanded {
+            ACTIVE_STACK_OFFSET_Y
+        } else {
+            MINIMIZED_STACK_OFFSET_Y
+        });
+        self.content_width
+            .set_target(pill_content_width(state, None));
+        self.hands_free_progress.set_target(
+            if state.hands_free && (state.mode == "recording" || state.mode == "processing") {
+                1.0
+            } else {
+                0.0
+            },
+        );
+
         let base_scale = if is_expanded {
             EXPANDED_PILL_SCALE
         } else if state.hovering && is_minimized {
@@ -339,6 +364,13 @@ impl AnimState {
         };
         self.pill_scale
             .set_target(base_scale * press_scale * proc_scale);
+
+        let audio_bounce = if state.mode == "recording" && !state.paused {
+            1.0 + state.level.min(1.0).powf(1.5) * AUDIO_BOUNCE_SCALE
+        } else {
+            1.0
+        };
+        self.audio_bounce.set_target(audio_bounce);
 
         // -- Gradient energy --
         let energy = match state.mode.as_str() {
@@ -424,6 +456,10 @@ impl AnimState {
         self.gradient_energy.tick(dt);
         self.hover_progress.tick(dt);
         self.slide_y.tick(dt);
+        self.stack_y.tick(dt);
+        self.content_width.tick(dt);
+        self.audio_bounce.tick(dt);
+        self.hands_free_progress.tick(dt);
     }
 
     fn needs_animation(&self, state: &OverlayState) -> bool {
@@ -433,6 +469,10 @@ impl AnimState {
             || !self.gradient_energy.is_settled()
             || !self.hover_progress.is_settled()
             || !self.slide_y.is_settled()
+            || !self.stack_y.is_settled()
+            || !self.content_width.is_settled()
+            || !self.audio_bounce.is_settled()
+            || !self.hands_free_progress.is_settled()
             || !self.pill_opacity.is_settled()
             || self.shake_active
             || self.celebration_start.is_some()
@@ -809,7 +849,8 @@ unsafe extern "system" fn wnd_proc(
 
                 if state.hands_free && state.mode == "recording" {
                     // Check pause/stop button hits
-                    let button_offset = CONTROL_BUTTON_OFFSET * geom.pill_scale;
+                    let button_offset =
+                        CONTROL_BUTTON_OFFSET * geom.content_scale * geom.hands_free_progress;
                     let pause_cx = geom.content_cx - button_offset;
                     let stop_cx = geom.content_cx + button_offset;
 
@@ -818,7 +859,7 @@ unsafe extern "system" fn wnd_proc(
                     let stop_dist =
                         ((mouse_x - stop_cx).powi(2) + (mouse_y - geom.pill_cy).powi(2)).sqrt();
 
-                    let control_hit_radius = CONTROL_HIT_RADIUS * geom.pill_scale.max(0.75);
+                    let control_hit_radius = CONTROL_HIT_RADIUS * geom.content_scale.max(0.75);
                     if pause_dist < control_hit_radius {
                         on_pause_callback();
                     } else if stop_dist < control_hit_radius {
@@ -924,13 +965,22 @@ struct OverlayGeometry {
     content_cx: f32,
     pill_w: f32,
     pill_h: f32,
-    pill_scale: f32,
+    content_scale: f32,
+    hands_free_progress: f32,
     shake_offset: f32,
 }
 
 fn overlay_geometry(state: &OverlayState, anim: Option<&AnimState>) -> OverlayGeometry {
     let cx = CANVAS_W as f32 / 2.0;
     let slide_y = anim.map(|a| a.slide_y.val()).unwrap_or(0.0);
+    let stack_y = anim.map(|a| a.stack_y.val()).unwrap_or_else(|| {
+        let is_expanded = state.mode != "idle" || state.onboarding_step.is_some();
+        if is_expanded {
+            ACTIVE_STACK_OFFSET_Y
+        } else {
+            MINIMIZED_STACK_OFFSET_Y
+        }
+    });
     let pill_scale = anim.map(|a| a.pill_scale.val()).unwrap_or_else(|| {
         let is_expanded = state.mode != "idle" || state.onboarding_step.is_some();
         if is_expanded {
@@ -941,6 +991,14 @@ fn overlay_geometry(state: &OverlayState, anim: Option<&AnimState>) -> OverlayGe
             IDLE_PILL_SCALE
         }
     });
+    let audio_bounce = anim.map(|a| a.audio_bounce.val()).unwrap_or_else(|| {
+        if state.mode == "recording" && !state.paused {
+            1.0 + state.level.min(1.0).powf(1.5) * AUDIO_BOUNCE_SCALE
+        } else {
+            1.0
+        }
+    });
+    let content_scale = pill_scale * audio_bounce;
     let shake_offset = anim
         .filter(|a| a.shake_active)
         .map(|a| {
@@ -949,25 +1007,32 @@ fn overlay_geometry(state: &OverlayState, anim: Option<&AnimState>) -> OverlayGe
         })
         .unwrap_or(0.0);
     let is_expanded = state.mode != "idle" || state.onboarding_step.is_some();
-    let stack_offset_y = if is_expanded {
-        ACTIVE_STACK_OFFSET_Y
-    } else {
-        MINIMIZED_STACK_OFFSET_Y
-    };
-    let content_w = pill_content_width(state, None);
+    let content_w = anim
+        .map(|a| a.content_width.val())
+        .unwrap_or_else(|| pill_content_width(state, None));
+    let hands_free_progress = anim
+        .map(|a| a.hands_free_progress.val())
+        .unwrap_or_else(|| {
+            if state.hands_free && (state.mode == "recording" || state.mode == "processing") {
+                1.0
+            } else {
+                0.0
+            }
+        });
     let pill_h = if is_expanded {
         EXPANDED_PILL_H
     } else {
         IDLE_PILL_H
-    } * pill_scale;
+    } * content_scale;
 
     OverlayGeometry {
         cx,
-        pill_cy: CANVAS_H as f32 - PILL_CENTER_BOTTOM_INSET + stack_offset_y + slide_y,
+        pill_cy: CANVAS_H as f32 - PILL_CENTER_BOTTOM_INSET + stack_y + slide_y,
         content_cx: cx + shake_offset,
-        pill_w: content_w * pill_scale,
+        pill_w: content_w * content_scale,
         pill_h,
-        pill_scale,
+        content_scale,
+        hands_free_progress,
         shake_offset,
     }
 }
@@ -1013,12 +1078,12 @@ fn hit_test_overlay(x: f32, y: f32, state: &OverlayState, anim: &AnimState) -> b
     let geom = overlay_geometry(state, Some(anim));
 
     if state.hands_free && state.mode == "recording" {
-        let button_offset = CONTROL_BUTTON_OFFSET * geom.pill_scale;
+        let button_offset = CONTROL_BUTTON_OFFSET * geom.content_scale * geom.hands_free_progress;
         let pause_cx = geom.content_cx - button_offset;
         let stop_cx = geom.content_cx + button_offset;
         let pause_dist = ((x - pause_cx).powi(2) + (y - geom.pill_cy).powi(2)).sqrt();
         let stop_dist = ((x - stop_cx).powi(2) + (y - geom.pill_cy).powi(2)).sqrt();
-        let control_hit_radius = CONTROL_HIT_RADIUS * geom.pill_scale.max(0.75);
+        let control_hit_radius = CONTROL_HIT_RADIUS * geom.content_scale.max(0.75);
         if pause_dist < control_hit_radius || stop_dist < control_hit_radius {
             return true;
         }
@@ -1109,8 +1174,8 @@ fn render_frame(hwnd: HWND, anim: &mut AnimState, font: &Option<FontRenderer>) {
     }
 
     // -- Pill background --
-    let pill_scale = geom.pill_scale;
-    let pill_w = pill_content_width(&state, font.as_ref()) * pill_scale;
+    let pill_scale = geom.content_scale;
+    let pill_w = geom.pill_w;
     let pill_h = geom.pill_h;
 
     let pill_x = cx - pill_w / 2.0 + geom.shake_offset;
@@ -1186,7 +1251,7 @@ fn render_frame(hwnd: HWND, anim: &mut AnimState, font: &Option<FontRenderer>) {
 
     match state.mode.as_str() {
         "recording" | "processing" => {
-            if state.hands_free {
+            if state.hands_free || geom.hands_free_progress > 0.01 {
                 render_hands_free_content(
                     &mut pixmap,
                     anim,
@@ -1194,6 +1259,7 @@ fn render_frame(hwnd: HWND, anim: &mut AnimState, font: &Option<FontRenderer>) {
                     pill_content_cx,
                     pill_cy,
                     pill_scale,
+                    geom.hands_free_progress,
                 );
             } else {
                 render_bars(
@@ -1234,8 +1300,11 @@ fn render_frame(hwnd: HWND, anim: &mut AnimState, font: &Option<FontRenderer>) {
     // -- Hover tooltip (above pill when minimized, matching the macOS sidecar) --
     if anim.hover_progress.val() > 0.01 && state.mode == "idle" && state.onboarding_step.is_none() {
         if let Some(ref fr) = font {
-            let alpha = (anim.hover_progress.val() * 255.0) as u8;
-            let tooltip_y = pill_cy - pill_h / 2.0 + HOVER_TOOLTIP_OFFSET_Y;
+            let hover_progress = anim.hover_progress.val().clamp(0.0, 1.0);
+            let alpha = (hover_progress * 255.0) as u8;
+            let tooltip_y = pill_cy - pill_h / 2.0
+                + HOVER_TOOLTIP_OFFSET_Y
+                + (1.0 - hover_progress) * HOVER_TOOLTIP_TRANSITION_Y;
             fr.render_centered(
                 &mut pixmap,
                 "Click to start transcribing",
@@ -1464,6 +1533,7 @@ fn render_hands_free_content(
     cx: f32,
     cy: f32,
     scale: f32,
+    controls_progress: f32,
 ) {
     // Bars in center
     if state.paused {
@@ -1473,20 +1543,35 @@ fn render_hands_free_content(
     }
 
     // Pause button (left)
-    let pause_cx = cx - CONTROL_BUTTON_OFFSET * scale;
-    render_circle_button(pixmap, pause_cx, cy, 13.0 * scale, [255, 255, 255, 38]); // bg
-    if state.paused {
-        // Play triangle
-        draw_play_icon(pixmap, pause_cx, cy, scale);
-    } else {
-        // Pause bars
-        draw_pause_icon(pixmap, pause_cx, cy, scale);
-    }
+    let controls_progress = controls_progress.clamp(0.0, 1.0);
+    if controls_progress > 0.01 {
+        let control_scale = scale * controls_progress;
+        let control_alpha = controls_progress;
+        let pause_cx = cx - CONTROL_BUTTON_OFFSET * scale * controls_progress;
+        render_circle_button(
+            pixmap,
+            pause_cx,
+            cy,
+            13.0 * control_scale,
+            [255, 255, 255, (38.0 * control_alpha) as u8],
+        );
+        if state.paused {
+            draw_play_icon(pixmap, pause_cx, cy, control_scale, control_alpha);
+        } else {
+            draw_pause_icon(pixmap, pause_cx, cy, control_scale, control_alpha);
+        }
 
-    // Stop button (right)
-    let stop_cx = cx + CONTROL_BUTTON_OFFSET * scale;
-    render_circle_button(pixmap, stop_cx, cy, 13.0 * scale, [217, 48, 48, 217]); // red bg
-    draw_stop_icon(pixmap, stop_cx, cy, scale);
+        // Stop button (right)
+        let stop_cx = cx + CONTROL_BUTTON_OFFSET * scale * controls_progress;
+        render_circle_button(
+            pixmap,
+            stop_cx,
+            cy,
+            13.0 * control_scale,
+            [217, 48, 48, (217.0 * control_alpha) as u8],
+        );
+        draw_stop_icon(pixmap, stop_cx, cy, control_scale, control_alpha);
+    }
 }
 
 fn render_flat_bars(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, scale: f32) {
@@ -1544,9 +1629,9 @@ fn render_circle_button(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, r: f32
     }
 }
 
-fn draw_pause_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, scale: f32) {
+fn draw_pause_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, scale: f32, alpha: f32) {
     let mut paint = tiny_skia::Paint::default();
-    paint.set_color(tiny_skia::Color::from_rgba(1.0, 1.0, 1.0, 0.9).unwrap());
+    paint.set_color(tiny_skia::Color::from_rgba(1.0, 1.0, 1.0, 0.9 * alpha).unwrap());
     paint.anti_alias = true;
     // Two vertical bars
     let bar_w = 2.5 * scale;
@@ -1576,9 +1661,9 @@ fn draw_pause_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, scale: f32)
     );
 }
 
-fn draw_play_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, scale: f32) {
+fn draw_play_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, scale: f32, alpha: f32) {
     let mut paint = tiny_skia::Paint::default();
-    paint.set_color(tiny_skia::Color::from_rgba(1.0, 1.0, 1.0, 0.9).unwrap());
+    paint.set_color(tiny_skia::Color::from_rgba(1.0, 1.0, 1.0, 0.9 * alpha).unwrap());
     paint.anti_alias = true;
     let mut pb = tiny_skia::PathBuilder::new();
     let size = 6.0 * scale;
@@ -1597,9 +1682,9 @@ fn draw_play_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, scale: f32) 
     }
 }
 
-fn draw_stop_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, scale: f32) {
+fn draw_stop_icon(pixmap: &mut tiny_skia::Pixmap, cx: f32, cy: f32, scale: f32, alpha: f32) {
     let mut paint = tiny_skia::Paint::default();
-    paint.set_color(tiny_skia::Color::from_rgba(1.0, 1.0, 1.0, 1.0).unwrap());
+    paint.set_color(tiny_skia::Color::from_rgba(1.0, 1.0, 1.0, alpha).unwrap());
     paint.anti_alias = true;
     let size = 4.5 * scale;
     let rect = rounded_rect(cx - size, cy - size, size * 2.0, size * 2.0, 1.5 * scale);
