@@ -1,6 +1,6 @@
 {
   "name": "yap",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Cross-platform voice-to-text tray app",
   "type": "module",
   "scripts": {
@@ -16,6 +16,9 @@
     "@tauri-apps/api": "2.10.1",
     "@tauri-apps/plugin-autostart": "^2.5.1",
     "@tauri-apps/plugin-opener": "^2"
+  },
+  "overrides": {
+    "cookie": "0.7.2"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.6",

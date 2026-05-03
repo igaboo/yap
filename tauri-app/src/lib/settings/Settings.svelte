@@ -41,8 +41,12 @@
 
   // ── Provider Metadata ─────────────────────────────────────────────────
 
-  const txProviders = [
-    { value: 'none', label: 'None' },
+  const isWindows = navigator.userAgent.toLowerCase().includes('windows');
+  const defaultHotkey = isWindows ? 'ctrl+space' : 'fn';
+  const defaultTxProvider = isWindows ? 'openai' : 'none';
+
+  const txProviders: Array<{ value: string; label: string; disabled?: boolean }> = [
+    { value: 'none', label: isWindows ? 'On-device (macOS only)' : 'On-device', disabled: isWindows },
     { value: 'gemini', label: 'Gemini' },
     { value: 'openai', label: 'OpenAI' },
     { value: 'deepgram', label: 'Deepgram' },
@@ -100,7 +104,7 @@
   let saving = $state(false);
 
   // General
-  let hotkey = $state('fn');
+  let hotkey = $state(defaultHotkey);
   let capturingHotkey = $state(false);
   let hotkeyPreview = $state('');
   let webPressedHotkeyParts: string[] = [];
@@ -109,7 +113,7 @@
   let selectedMic = $state('');
 
   // Transcription
-  let txProvider = $state('none');
+  let txProvider = $state(defaultTxProvider);
   let txApiKey = $state('');
   let txModel = $state('');
   let showTxApiKey = $state(false);
@@ -191,7 +195,7 @@
       const cfg = await invoke<AppConfig>('get_config');
       hotkey = cfg.hotkey;
       selectedMic = cfg.audioDevice ?? '';
-      txProvider = cfg.txProvider;
+      txProvider = isWindows && cfg.txProvider === 'none' ? defaultTxProvider : cfg.txProvider;
       txApiKey = cfg.txApiKey;
       txModel = cfg.txModel;
       fmtProvider = cfg.fmtProvider;
@@ -470,14 +474,19 @@
 
   // ── Reset Onboarding ─────────────────────────────────────────────────
 
-  function resetOnboarding() {
+  async function resetOnboarding() {
     onboardingComplete = false;
+    try {
+      await invoke('reset_onboarding');
+    } catch (e) {
+      console.error('Failed to reset onboarding:', e);
+    }
   }
 
   function resetDefaults() {
-    hotkey = 'fn';
+    hotkey = defaultHotkey;
     selectedMic = '';
-    txProvider = 'none';
+    txProvider = defaultTxProvider;
     txApiKey = '';
     txModel = '';
     fmtProvider = 'none';
@@ -579,7 +588,11 @@
                 {hotkeyDisplayLabel(hotkey)}
               {/if}
             </button>
-            <span class="field-description">Press the exact key or combination. Fn/Globe is captured natively.</span>
+            <span class="field-description">
+              {isWindows
+                ? 'Press the exact key or combination. Fn works only on keyboards that expose it to Windows.'
+                : 'Press the exact key or combination. Fn/Globe is captured natively.'}
+            </span>
           </div>
 
           <div class="field-divider"></div>
@@ -609,7 +622,7 @@
             <span class="field-label">Provider</span>
             <select class="select" bind:value={txProvider}>
               {#each txProviders as p}
-                <option value={p.value}>{p.label}</option>
+                <option value={p.value} disabled={p.disabled}>{p.label}</option>
               {/each}
             </select>
           </div>

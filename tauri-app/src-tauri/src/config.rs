@@ -10,7 +10,8 @@ use crate::transcription::TranscriptionProvider;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
-    /// Hotkey modifier: "fn" or "option"
+    /// Global recording shortcut. Windows defaults away from `fn` because most
+    /// PC keyboards do not expose Fn as a user-space key.
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
 
@@ -114,7 +115,11 @@ impl AppConfig {
 // ---- serde default helpers ------------------------------------------------
 
 fn default_hotkey() -> String {
-    "fn".to_string()
+    if cfg!(target_os = "windows") {
+        "ctrl+space".to_string()
+    } else {
+        "fn".to_string()
+    }
 }
 
 fn default_true() -> bool {

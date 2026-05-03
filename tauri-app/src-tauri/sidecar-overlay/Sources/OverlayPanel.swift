@@ -318,7 +318,6 @@ enum OverlayMode: Equatable {
 
 enum OnboardingStep: Hashable {
     case tryIt
-    case nice
     case doubleTapTip
     case clickTip
     case apiTip
@@ -328,7 +327,6 @@ enum OnboardingStep: Hashable {
     static func from(_ str: String) -> OnboardingStep? {
         switch str {
         case "tryIt": return .tryIt
-        case "nice": return .nice
         case "doubleTapTip": return .doubleTapTip
         case "clickTip": return .clickTip
         case "apiTip": return .apiTip
@@ -515,12 +513,6 @@ struct OverlayView: View {
         }
         .onChange(of: state.mode) { _ in
             if state.mode != .idle { state.isHovering = false }
-        }
-        .onChange(of: state.onboardingStep) { step in
-            guard step == .nice else { return }
-            withAnimation(.linear(duration: 3.0)) {
-                celebrationPhase += .pi * 4
-            }
         }
     }
 
@@ -720,11 +712,6 @@ struct PromptCardView: View {
     let step: OnboardingStep
     var hotkeyLabel: String = "fn"
 
-    static let niceMessages = [
-        "Nice! 🎉", "Nailed it! ✨", "Sounds good! 👌",
-        "Got it! 🙌", "Perfect! 🎯", "Love it! 💫",
-    ]
-
     var body: some View {
         cardContent
             .font(.system(size: 15, weight: .medium))
@@ -749,8 +736,6 @@ struct PromptCardView: View {
         switch step {
         case .tryIt:
             HStack(spacing: 6) { Text("Hold"); KeyCapView(label: hotkeyLabel); Text("to start recording") }
-        case .nice:
-            Text(PromptCardView.niceMessages.randomElement()!)
         case .doubleTapTip:
             HStack(spacing: 6) { Text("Double-tap"); KeyCapView(label: hotkeyLabel); Text("for hands-free recording") }
         case .clickTip:

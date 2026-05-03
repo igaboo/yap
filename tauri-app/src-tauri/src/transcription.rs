@@ -10,7 +10,7 @@ use crate::formatting::FormattingStyle;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TranscriptionProvider {
-    /// On-device speech recognition (Apple Speech / Windows Speech).
+    /// On-device speech recognition. Currently available on macOS.
     None,
     Gemini,
     #[serde(rename = "openai")]
@@ -22,7 +22,11 @@ pub enum TranscriptionProvider {
 
 impl Default for TranscriptionProvider {
     fn default() -> Self {
-        Self::None
+        if cfg!(target_os = "windows") {
+            Self::OpenAI
+        } else {
+            Self::None
+        }
     }
 }
 
