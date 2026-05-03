@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use rand::prelude::IndexedRandom;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::audio::{self, AudioLevels};
 use crate::config::{self, AppConfig};
@@ -48,34 +48,7 @@ pub enum AppState {
     Processing,
 }
 
-// ---------------------------------------------------------------------------
-// Events emitted to the frontend
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct StateChangePayload {
-    /// Simplified state string for the frontend: "idle", "recording", "processing".
-    state: String,
-    /// Whether hands-free mode is active.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    hands_free: Option<bool>,
-    /// Whether hands-free recording is paused.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    paused: Option<bool>,
-    /// Elapsed recording time in seconds (for timer display).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    elapsed: Option<f64>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ErrorPayload {
-    message: String,
-}
-
-fn emit_levels_to_renderers(app: &AppHandle, levels: &AudioLevels) {
-    let _ = app.emit("audio:levels", levels);
+fn emit_levels_to_renderers(levels: &AudioLevels) {
     #[cfg(target_os = "macos")]
     crate::sidecar::send(&crate::sidecar::OutMessage::Levels {
         level: levels.level,
@@ -133,14 +106,6 @@ impl OnboardingStep {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NiceContext {
     next_step: OnboardingStep,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct OnboardingPayload {
-    step: String,
-    text: String,
-    hotkey_label: String,
 }
 
 static NICE_MESSAGES: &[&str] = &[
@@ -283,16 +248,6 @@ impl OrchestratorInner {
         paused: Option<bool>,
         elapsed: Option<f64>,
     ) {
-        let _ = self.app.emit(
-            "state:change",
-            StateChangePayload {
-                state: state_str.to_string(),
-                hands_free,
-                paused,
-                elapsed,
-            },
-        );
-
         #[cfg(target_os = "macos")]
         crate::sidecar::send(&crate::sidecar::OutMessage::State {
             state: state_str.to_string(),
@@ -354,19 +309,13 @@ impl OrchestratorInner {
             self.state,
             AppState::Idle | AppState::PressPending | AppState::TapPending
         ) {
-            emit_levels_to_renderers(&self.app, &AudioLevels::default());
+            emit_levels_to_renderers(&AudioLevels::default());
         }
         tray::update_icon(&self.app, state_str);
     }
 
     /// Emit an error event to the frontend.
     fn emit_error(&self, message: &str) {
-        let _ = self.app.emit(
-            "error:show",
-            ErrorPayload {
-                message: message.to_string(),
-            },
-        );
         #[cfg(target_os = "macos")]
         crate::sidecar::send(&crate::sidecar::OutMessage::Error {
             message: message.to_string(),
@@ -388,25 +337,16 @@ impl OrchestratorInner {
             .as_ref()
             .map(|s| s.to_str().to_string())
             .unwrap_or_default();
-        let text = self
+        let _text = self
             .onboarding_step
             .as_ref()
             .map(|s| onboarding_text(s, &self.hotkey_label))
             .unwrap_or_default();
 
-        let _ = self.app.emit(
-            "onboarding:step",
-            OnboardingPayload {
-                step: step_str.clone(),
-                text: text.clone(),
-                hotkey_label: self.hotkey_label.clone(),
-            },
-        );
-
         #[cfg(target_os = "macos")]
         crate::sidecar::send(&crate::sidecar::OutMessage::Onboarding {
             step: step_str.clone(),
-            text,
+            text: _text,
             hotkey_label: self.hotkey_label.clone(),
         });
 
@@ -523,8 +463,6 @@ impl Orchestrator {
                 | OnboardingStep::Welcome => {
                     log::info(&format!("Hold-to-confirm for: {:?}", eff_step));
                     inner.hold_confirm_start = Some(Instant::now());
-                    // Emit a "pressed" event so the frontend can show scale-down feedback
-                    let _ = inner.app.emit("onboarding:press", true);
                     #[cfg(target_os = "macos")]
                     crate::sidecar::send(&crate::sidecar::OutMessage::OnboardingPress {
                         pressed: true,
@@ -543,7 +481,6 @@ impl Orchestrator {
                         if let Some(start) = inner.hold_confirm_start {
                             if start.elapsed().as_millis() >= 550 {
                                 inner.hold_confirm_start = None;
-                                let _ = inner.app.emit("onboarding:press", false);
                                 #[cfg(target_os = "macos")]
                                 crate::sidecar::send(
                                     &crate::sidecar::OutMessage::OnboardingPress { pressed: false },
@@ -599,7 +536,6 @@ impl Orchestrator {
         // Handle onboarding hold-to-confirm (released too early)
         if inner.hold_confirm_start.is_some() {
             inner.hold_confirm_start = None;
-            let _ = inner.app.emit("onboarding:press", false);
             #[cfg(target_os = "macos")]
             crate::sidecar::send(&crate::sidecar::OutMessage::OnboardingPress { pressed: false });
             #[cfg(target_os = "windows")]
@@ -900,20 +836,6 @@ impl Orchestrator {
         // Push appearance settings to the overlay
         {
             let inner = self.inner.lock().unwrap();
-            let _ = inner.app.emit(
-                "gradient:toggle",
-                serde_json::json!({
-                    "enabled": cfg.gradient_enabled,
-                }),
-            );
-            let _ = inner.app.emit(
-                "overlay:visibility",
-                serde_json::json!({
-                    "visible": cfg.always_visible_pill,
-                }),
-            );
-            let _ = inner.app.emit("settings:changed", ());
-
             #[cfg(target_os = "macos")]
             crate::sidecar::send(&crate::sidecar::OutMessage::Config {
                 gradient_enabled: cfg.gradient_enabled,
@@ -942,7 +864,6 @@ impl Orchestrator {
         inner.enabled = !inner.enabled;
         let enabled = inner.enabled;
         log::info(&format!("Enabled: {enabled}"));
-        let _ = inner.app.emit("enabled:changed", enabled);
     }
 
     // -- Audio level callback ---------------------------------------------
@@ -959,9 +880,8 @@ impl Orchestrator {
         if levels.level > inner.peak_level {
             inner.peak_level = levels.level;
         }
-        let app = inner.app.clone();
         drop(inner);
-        emit_levels_to_renderers(&app, &levels);
+        emit_levels_to_renderers(&levels);
     }
 
     // -- Onboarding flow ---------------------------------------------------
@@ -1510,17 +1430,10 @@ pub fn init(app: &AppHandle) {
     // Start audio level poller
     start_level_poller(Arc::clone(&orch));
 
-    // -- Overlay setup: native sidecar on macOS, WebView on Windows --
+    // -- Overlay setup: native sidecar on macOS, native Win32 renderer on Windows --
 
     #[cfg(target_os = "macos")]
     {
-        // Close the WebView overlay — macOS uses the native sidecar instead.
-        // The window is defined in tauri.conf.json (needed for Windows) but
-        // we don't need it on macOS.
-        if let Some(overlay) = app.get_webview_window("overlay") {
-            let _ = overlay.destroy();
-        }
-
         // Spawn native Swift overlay sidecar (NSPanel + SwiftUI)
         crate::sidecar::spawn(app);
 
@@ -1539,11 +1452,6 @@ pub fn init(app: &AppHandle) {
 
     #[cfg(target_os = "windows")]
     {
-        // Destroy the WebView overlay — Windows uses a native Win32 pill instead
-        if let Some(overlay) = app.get_webview_window("overlay") {
-            let _ = overlay.destroy();
-        }
-
         // Spawn native Win32 overlay (layered window + tiny-skia rendering)
         crate::win_overlay::spawn(app);
 

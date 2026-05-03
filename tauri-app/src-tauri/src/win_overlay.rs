@@ -1299,25 +1299,11 @@ fn render_frame(hwnd: HWND, anim: &mut AnimState, font: &Option<FontRenderer>) {
                     geom.hands_free_progress,
                 );
             } else {
-                render_bars(
-                    &mut pixmap,
-                    anim,
-                    &state,
-                    pill_content_cx,
-                    pill_cy,
-                    pill_scale,
-                );
+                render_bars(&mut pixmap, anim, pill_content_cx, pill_cy, pill_scale);
             }
         }
         "pending" => {
-            render_bars(
-                &mut pixmap,
-                anim,
-                &state,
-                pill_content_cx,
-                pill_cy,
-                pill_scale,
-            );
+            render_bars(&mut pixmap, anim, pill_content_cx, pill_cy, pill_scale);
         }
         "error" => {
             render_flat_bars(&mut pixmap, pill_content_cx, pill_cy, pill_scale);
@@ -1548,14 +1534,7 @@ fn gradient_dither(x: u32, y: u32) -> f32 {
     ((n ^ (n >> 16)) & 0xff) as f32 / 255.0
 }
 
-fn render_bars(
-    pixmap: &mut tiny_skia::Pixmap,
-    anim: &AnimState,
-    state: &OverlayState,
-    cx: f32,
-    cy: f32,
-    scale: f32,
-) {
+fn render_bars(pixmap: &mut tiny_skia::Pixmap, anim: &AnimState, cx: f32, cy: f32, scale: f32) {
     let bar_w = BAR_W * scale;
     let bar_gap = BAR_GAP * scale;
     let bars_total_w = BARS_TOTAL_W * scale;
@@ -1594,7 +1573,7 @@ fn render_hands_free_content(
     if state.paused {
         render_flat_bars(pixmap, cx, cy, scale);
     } else {
-        render_bars(pixmap, anim, state, cx, cy, scale);
+        render_bars(pixmap, anim, cx, cy, scale);
     }
 
     // Pause button (left)

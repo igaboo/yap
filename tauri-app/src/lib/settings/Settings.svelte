@@ -139,14 +139,23 @@
 
   // Load + sync autostart state with the OS
   async function loadAutostart() {
-    const { isEnabled } = await import('@tauri-apps/plugin-autostart');
-    startWithSystem = await isEnabled();
+    try {
+      const { isEnabled } = await import('@tauri-apps/plugin-autostart');
+      startWithSystem = await isEnabled();
+    } catch (e) {
+      console.error('Failed to load autostart state:', e);
+    }
   }
   loadAutostart();
 
   async function toggleAutostart(enabled: boolean) {
-    const { enable, disable } = await import('@tauri-apps/plugin-autostart');
-    if (enabled) { await enable(); } else { await disable(); }
+    try {
+      const { enable, disable } = await import('@tauri-apps/plugin-autostart');
+      if (enabled) { await enable(); } else { await disable(); }
+    } catch (e) {
+      startWithSystem = !enabled;
+      console.error('Failed to update autostart state:', e);
+    }
   }
 
   // History
@@ -486,6 +495,8 @@
     soundsEnabled = true;
     gradientEnabled = true;
     alwaysVisiblePill = true;
+    startWithSystem = false;
+    void toggleAutostart(false);
     historyEnabled = true;
     speechLocale = '';
   }
@@ -931,7 +942,7 @@
               <span class="toggle-description">Launch Yap automatically when you log in</span>
             </div>
             <label class="toggle-switch">
-              <input type="checkbox" bind:checked={startWithSystem} onchange={() => toggleAutostart(startWithSystem)} />
+              <input type="checkbox" bind:checked={startWithSystem} onchange={() => { void toggleAutostart(startWithSystem); }} />
               <span class="toggle-track"></span>
               <span class="toggle-thumb"></span>
             </label>

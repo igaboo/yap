@@ -7,10 +7,10 @@ import { resolve } from "node:path";
 const host = process.env.TAURI_DEV_HOST;
 
 /** Standalone HTML pages used by secondary Tauri windows (not SvelteKit routes). */
-const standalonePages = ["overlay", "settings", "history"];
+const standalonePages = ["settings", "history"];
 
 /**
- * Vite plugin that serves standalone HTML entry points (overlay, settings, history)
+ * Vite plugin that serves standalone HTML entry points (settings, history)
  * alongside the SvelteKit app. These are separate Tauri windows that don't use
  * SvelteKit routing — they mount Svelte components directly.
  *

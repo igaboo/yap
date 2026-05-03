@@ -13,18 +13,6 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "label": "overlay",
-        "url": "/overlay.html",
-        "width": 660,
-        "height": 200,
-        "transparent": true,
-        "decorations": false,
-        "shadow": false,
-        "alwaysOnTop": true,
-        "visible": false,
-        "skipTaskbar": true
-      },
-      {
         "label": "settings",
         "title": "Yap",
         "url": "/settings.html",

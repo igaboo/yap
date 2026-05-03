@@ -388,6 +388,7 @@ mod platform {
 
     // --- Raw CoreGraphics FFI bindings ---
 
+    type CFDictionaryRef = *const std::ffi::c_void;
     type CGEventRef = *mut std::ffi::c_void;
     type CGEventTapProxy = *mut std::ffi::c_void;
     type CFMachPortRef = *mut std::ffi::c_void;
@@ -465,7 +466,20 @@ mod platform {
             return_after_source_handled: u8,
         ) -> i32;
 
+        fn CFDictionaryCreate(
+            allocator: CFAllocatorRef,
+            keys: *const *const std::ffi::c_void,
+            values: *const *const std::ffi::c_void,
+            num_values: isize,
+            key_callbacks: *const std::ffi::c_void,
+            value_callbacks: *const std::ffi::c_void,
+        ) -> CFDictionaryRef;
+
         fn CFRelease(cf: *const std::ffi::c_void);
+
+        fn AXIsProcessTrusted() -> bool;
+
+        fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> bool;
 
         // kCFRunLoopCommonModes is an external C symbol
         static kCFRunLoopCommonModes: CFStringRef;
@@ -473,6 +487,9 @@ mod platform {
 
         // kCFAllocatorDefault
         static kCFAllocatorDefault: CFAllocatorRef;
+
+        static kCFBooleanTrue: *const std::ffi::c_void;
+        static kAXTrustedCheckOptionPrompt: CFStringRef;
     }
 
     /// Track key held state.
@@ -506,6 +523,8 @@ mod platform {
 
     static CAPTURE_LAST_SHORTCUT: once_cell::sync::Lazy<Mutex<String>> =
         once_cell::sync::Lazy::new(|| Mutex::new(String::new()));
+
+    static ACCESSIBILITY_RETRY_PENDING: AtomicBool = AtomicBool::new(false);
 
     const ALL_MODIFIER_FLAGS: u64 = K_CG_EVENT_FLAG_MASK_SHIFT
         | K_CG_EVENT_FLAG_MASK_CONTROL
@@ -553,6 +572,16 @@ mod platform {
         CURRENT_PRESS_IS_DOUBLE_TAP.store(false, Ordering::SeqCst);
         let generation = begin_listener_generation();
 
+        if !accessibility_trusted(false) {
+            eprintln!(
+                "[yap] HOTKEY WAITING: grant Accessibility permission to enable {}",
+                spec.label()
+            );
+            RUNNING.store(false, Ordering::SeqCst);
+            request_accessibility_and_retry(spec, generation);
+            return;
+        }
+
         // Spawn a dedicated thread with its own CFRunLoop
         std::thread::Builder::new()
             .name("yap-hotkey".into())
@@ -586,6 +615,7 @@ mod platform {
                     if tap.is_null() {
                         eprintln!("[yap] HOTKEY FAILED: add this app to System Settings → Privacy & Security → Accessibility");
                         RUNNING.store(false, Ordering::SeqCst);
+                        request_accessibility_and_retry(spec, generation);
                         return;
                     }
                     eprintln!("[yap] Hotkey CGEventTap created successfully");
@@ -620,6 +650,68 @@ mod platform {
                 }
             })
             .expect("failed to spawn hotkey thread");
+    }
+
+    fn accessibility_trusted(prompt: bool) -> bool {
+        if !prompt {
+            return unsafe { AXIsProcessTrusted() };
+        }
+
+        unsafe {
+            let keys = [kAXTrustedCheckOptionPrompt as *const std::ffi::c_void];
+            let values = [kCFBooleanTrue];
+            let options = CFDictionaryCreate(
+                kCFAllocatorDefault,
+                keys.as_ptr(),
+                values.as_ptr(),
+                1,
+                std::ptr::null(),
+                std::ptr::null(),
+            );
+
+            let trusted = if options.is_null() {
+                AXIsProcessTrusted()
+            } else {
+                AXIsProcessTrustedWithOptions(options)
+            };
+
+            if !options.is_null() {
+                CFRelease(options);
+            }
+
+            trusted
+        }
+    }
+
+    fn request_accessibility_and_retry(spec: HotkeySpec, generation: u64) {
+        if ACCESSIBILITY_RETRY_PENDING.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
+        std::thread::Builder::new()
+            .name("yap-accessibility-wait".into())
+            .spawn(move || {
+                let _ = accessibility_trusted(true);
+
+                for _ in 0..120 {
+                    if LISTENER_EPOCH.load(Ordering::SeqCst) != generation {
+                        ACCESSIBILITY_RETRY_PENDING.store(false, Ordering::SeqCst);
+                        return;
+                    }
+
+                    if accessibility_trusted(false) {
+                        eprintln!("[yap] Accessibility granted; restarting hotkey listener");
+                        ACCESSIBILITY_RETRY_PENDING.store(false, Ordering::SeqCst);
+                        start(spec);
+                        return;
+                    }
+
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+
+                ACCESSIBILITY_RETRY_PENDING.store(false, Ordering::SeqCst);
+            })
+            .ok();
     }
 
     /// C callback for the CGEventTap.
