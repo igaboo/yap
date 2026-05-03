@@ -376,7 +376,6 @@ class OverlayState: ObservableObject {
 struct OverlayView: View {
     @ObservedObject var state: OverlayState
     @State private var shakeProgress: CGFloat = 0
-    @State private var celebrationPhase: Double = 0
 
     private var isActive: Bool { state.mode != .idle || state.isOnboarding }
     private var isExpanded: Bool { state.mode != .idle || state.isOnboarding }
@@ -409,7 +408,7 @@ struct OverlayView: View {
     var body: some View {
         ZStack {
             if showGradient {
-                LavaLampBackground(energy: gradientEnergy, celebrationPhase: celebrationPhase)
+                LavaLampBackground(energy: gradientEnergy)
                     .allowsHitTesting(false)
                     .offset(y: stackYOffset)
                     .transition(.opacity.combined(with: .offset(y: 60)))
@@ -617,34 +616,26 @@ struct OverlayView: View {
 
 struct LavaLampBackground: View {
     var energy: CGFloat
-    var celebrationPhase: Double = 0
 
     var body: some View {
         TimelineView(.animation) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             let speed = 0.4 + energy * 0.6
             let brightness = 0.25 + energy * 0.25
-            let p = celebrationPhase
-            let envelope = CGFloat(max(0, sin(p / 4.0)))
-            let r: CGFloat = 150 * envelope
-            let ox0 = CGFloat(cos(p + 0)) * r;          let oy0 = CGFloat(sin(p + 0)) * r
-            let ox1 = CGFloat(cos(p + .pi * 0.5)) * r;  let oy1 = CGFloat(sin(p + .pi * 0.5)) * r
-            let ox2 = CGFloat(cos(p + .pi)) * r;         let oy2 = CGFloat(sin(p + .pi)) * r
-            let ox3 = CGFloat(cos(p + .pi * 1.5)) * r;  let oy3 = CGFloat(sin(p + .pi * 1.5)) * r
 
             ZStack {
                 Ellipse().fill(Color.purple.opacity(brightness))
                     .frame(width: 220, height: 105)
-                    .offset(x: cos(t * 0.7 * speed) * 80 + ox0, y: sin(t * 0.5 * speed) * 26 + oy0)
+                    .offset(x: cos(t * 0.7 * speed) * 80, y: sin(t * 0.5 * speed) * 26)
                 Ellipse().fill(Color.blue.opacity(brightness * 0.9))
                     .frame(width: 260, height: 120)
-                    .offset(x: sin(t * 0.6 * speed + 1.5) * 92 + ox1, y: cos(t * 0.45 * speed + 1.0) * 30 + oy1)
+                    .offset(x: sin(t * 0.6 * speed + 1.5) * 92, y: cos(t * 0.45 * speed + 1.0) * 30)
                 Ellipse().fill(Color.cyan.opacity(brightness * 0.85))
                     .frame(width: 205, height: 94)
-                    .offset(x: cos(t * 0.8 * speed + 3.0) * 68 + ox2, y: sin(t * 0.6 * speed + 2.0) * 24 + oy2)
+                    .offset(x: cos(t * 0.8 * speed + 3.0) * 68, y: sin(t * 0.6 * speed + 2.0) * 24)
                 Ellipse().fill(Color.indigo.opacity(brightness * 0.9))
                     .frame(width: 235, height: 102)
-                    .offset(x: sin(t * 0.55 * speed + 4.5) * 86 + ox3, y: cos(t * 0.7 * speed + 3.5) * 26 + oy3)
+                    .offset(x: sin(t * 0.55 * speed + 4.5) * 86, y: cos(t * 0.7 * speed + 3.5) * 26)
             }
             .blur(radius: 42)
             .offset(y: 36)

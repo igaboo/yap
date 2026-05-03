@@ -58,8 +58,6 @@ const IDLE_PILL_SCALE: f32 = 0.5;
 const PROCESSING_SCALE: f32 = 0.8;
 const PRESS_SCALE: f32 = 0.85;
 const AUDIO_BOUNCE_SCALE: f32 = 0.12;
-const CELEBRATION_DURATION: Duration = Duration::from_millis(3000);
-const FULL_CIRCLE: f64 = std::f64::consts::PI * 2.0;
 const FRAME_INTERVAL_MS: u32 = 16;
 const MAX_ANIMATION_DT: f32 = 1.0 / 30.0;
 
@@ -81,7 +79,6 @@ const CONTROL_BUTTON_OFFSET: f32 = 49.0;
 const CONTROL_HIT_RADIUS: f32 = 17.0;
 const GRADIENT_OFFSET_Y: f32 = 18.0;
 const GRADIENT_MOTION_SCALE: f32 = 0.38;
-const GRADIENT_CELEBRATION_RADIUS: f32 = 18.0;
 const GRADIENT_DITHER_ALPHA: f32 = 3.0;
 
 const POSITION_SCALE: [f32; 11] = [
@@ -201,10 +198,6 @@ pub struct OverlayState {
     pub gradient_enabled: bool,
     pub always_visible: bool,
 
-    // Celebration
-    #[allow(dead_code)]
-    pub celebrating: bool,
-
     // Pressed state (onboarding key press visual)
     pub is_pressed: bool,
 }
@@ -224,7 +217,6 @@ impl Default for OverlayState {
             hotkey_label: "fn".into(),
             gradient_enabled: true,
             always_visible: true,
-            celebrating: false,
             is_pressed: false,
         }
     }
@@ -250,7 +242,6 @@ struct AnimState {
     error_timer: Option<Instant>, // When error was shown
     shake_progress: f32,          // 0→1 for no-speech shake
     shake_active: bool,
-    celebration_start: Option<Instant>,
     prev_mode: String,
     prev_onboarding_step: Option<OnboardingStep>,
     start_time: Instant,
@@ -276,7 +267,6 @@ impl AnimState {
             error_timer: None,
             shake_progress: 0.0,
             shake_active: false,
-            celebration_start: None,
             prev_mode: "idle".into(),
             prev_onboarding_step: None,
             start_time: Instant::now(),
@@ -311,13 +301,6 @@ impl AnimState {
 
         if state.onboarding_step != self.prev_onboarding_step {
             self.prev_onboarding_step = state.onboarding_step.clone();
-        }
-
-        if self
-            .celebration_start
-            .is_some_and(|started| started.elapsed() >= CELEBRATION_DURATION)
-        {
-            self.celebration_start = None;
         }
 
         // Visibility
@@ -489,7 +472,6 @@ impl AnimState {
             || !self.hands_free_progress.is_settled()
             || !self.pill_opacity.is_settled()
             || self.shake_active
-            || self.celebration_start.is_some()
             || self.bar_springs.iter().any(|s| !s.is_settled())
     }
 
@@ -1528,27 +1510,6 @@ fn render_gradient(pixmap: &mut tiny_skia::Pixmap, anim: &AnimState, cx: f32, cy
     let group_x = (t * 0.42 * speed).cos() as f32 * 18.0 * GRADIENT_MOTION_SCALE;
     let group_y = (t * 0.34 * speed).sin() as f32 * 8.0 * GRADIENT_MOTION_SCALE;
 
-    // Celebration orbit
-    let (ox0, oy0, ox1, oy1, ox2, oy2, ox3, oy3) = if let Some(start) = anim.celebration_start {
-        let progress =
-            (start.elapsed().as_secs_f64() / CELEBRATION_DURATION.as_secs_f64()).min(1.0);
-        let p = progress * FULL_CIRCLE;
-        let envelope = (progress * std::f64::consts::PI).sin().max(0.0) as f32;
-        let r = GRADIENT_CELEBRATION_RADIUS * envelope;
-        (
-            p.cos() as f32 * r,
-            p.sin() as f32 * r,
-            (p + std::f64::consts::FRAC_PI_2).cos() as f32 * r,
-            (p + std::f64::consts::FRAC_PI_2).sin() as f32 * r,
-            (p + std::f64::consts::PI).cos() as f32 * r,
-            (p + std::f64::consts::PI).sin() as f32 * r,
-            (p + std::f64::consts::PI * 1.5).cos() as f32 * r,
-            (p + std::f64::consts::PI * 1.5).sin() as f32 * r,
-        )
-    } else {
-        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    };
-
     // Four oversized, overlapping ellipses. Windows layered windows do not get
     // the CSS blur used by the Svelte path, so the softness is baked into a
     // broad falloff and slow grouped motion instead of obvious orbiting.
@@ -1565,14 +1526,8 @@ fn render_gradient(pixmap: &mut tiny_skia::Pixmap, anim: &AnimState, cx: f32, cy
 
     let blobs = [
         Blob {
-            x: cx + group_x - 44.0
-                + (t * 0.58 * speed).sin() as f32 * 13.0 * GRADIENT_MOTION_SCALE
-                + ox0,
-            y: cy
-                + 24.0
-                + group_y
-                + (t * 0.43 * speed).cos() as f32 * 7.0 * GRADIENT_MOTION_SCALE
-                + oy0,
+            x: cx + group_x - 44.0 + (t * 0.58 * speed).sin() as f32 * 13.0 * GRADIENT_MOTION_SCALE,
+            y: cy + 24.0 + group_y + (t * 0.43 * speed).cos() as f32 * 7.0 * GRADIENT_MOTION_SCALE,
             rx: 180.0,
             ry: 92.0,
             r: 147.0 / 255.0,
@@ -1584,13 +1539,11 @@ fn render_gradient(pixmap: &mut tiny_skia::Pixmap, anim: &AnimState, cx: f32, cy
             x: cx
                 + group_x
                 + 38.0
-                + (t * 0.5 * speed + 1.3).cos() as f32 * 15.0 * GRADIENT_MOTION_SCALE
-                + ox1,
+                + (t * 0.5 * speed + 1.3).cos() as f32 * 15.0 * GRADIENT_MOTION_SCALE,
             y: cy
                 + 30.0
                 + group_y
-                + (t * 0.37 * speed + 0.8).sin() as f32 * 9.0 * GRADIENT_MOTION_SCALE
-                + oy1,
+                + (t * 0.37 * speed + 0.8).sin() as f32 * 9.0 * GRADIENT_MOTION_SCALE,
             rx: 210.0,
             ry: 104.0,
             r: 59.0 / 255.0,
@@ -1600,13 +1553,11 @@ fn render_gradient(pixmap: &mut tiny_skia::Pixmap, anim: &AnimState, cx: f32, cy
         },
         Blob {
             x: cx + group_x - 16.0
-                + (t * 0.46 * speed + 2.6).sin() as f32 * 12.0 * GRADIENT_MOTION_SCALE
-                + ox2,
+                + (t * 0.46 * speed + 2.6).sin() as f32 * 12.0 * GRADIENT_MOTION_SCALE,
             y: cy
                 + 38.0
                 + group_y
-                + (t * 0.41 * speed + 1.9).cos() as f32 * 8.0 * GRADIENT_MOTION_SCALE
-                + oy2,
+                + (t * 0.41 * speed + 1.9).cos() as f32 * 8.0 * GRADIENT_MOTION_SCALE,
             rx: 168.0,
             ry: 84.0,
             r: 34.0 / 255.0,
@@ -1618,13 +1569,11 @@ fn render_gradient(pixmap: &mut tiny_skia::Pixmap, anim: &AnimState, cx: f32, cy
             x: cx
                 + group_x
                 + 10.0
-                + (t * 0.39 * speed + 4.1).cos() as f32 * 14.0 * GRADIENT_MOTION_SCALE
-                + ox3,
+                + (t * 0.39 * speed + 4.1).cos() as f32 * 14.0 * GRADIENT_MOTION_SCALE,
             y: cy
                 + 20.0
                 + group_y
-                + (t * 0.52 * speed + 3.4).sin() as f32 * 7.0 * GRADIENT_MOTION_SCALE
-                + oy3,
+                + (t * 0.52 * speed + 3.4).sin() as f32 * 7.0 * GRADIENT_MOTION_SCALE,
             rx: 194.0,
             ry: 94.0,
             r: 99.0 / 255.0,
