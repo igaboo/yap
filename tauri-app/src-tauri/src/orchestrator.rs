@@ -1269,14 +1269,14 @@ async fn process_audio_pipeline(wav_path: &PathBuf, cfg: &AppConfig) -> Result<S
         && cfg.fmt_provider == FormattingProvider::Gemini
         && cfg.tx_provider.can_also_format();
 
-    // Apple Speech pre-check: before calling expensive API providers, run a
-    // quick on-device check to confirm speech exists in the audio. This saves
-    // API costs on silence/noise that slipped past the peak-level gate.
+    // Local speech-activity pre-check: before calling API providers, reject
+    // definite silence/impulses that slipped past the peak-level gate without
+    // waiting on platform speech recognition.
     if cfg.tx_provider != TranscriptionProvider::None {
         let check_path = wav_path.clone();
-        let has_speech = tokio::task::spawn_blocking(move || crate::speech::pre_check(&check_path))
+        let has_speech = tokio::task::spawn_blocking(move || crate::vad::pre_check(&check_path))
             .await
-            .unwrap_or(false);
+            .unwrap_or(true);
 
         if !has_speech {
             return Err("No speech detected".to_string());
